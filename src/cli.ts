@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name("bento")
   .description(
-    "Bento CLI - Command-oriented and conversational interface for Bento email marketing"
+    "Bento CLI - Command-oriented interface for Bento email marketing"
   )
   .version("0.1.0")
   .option("--json", "Output machine-readable JSON")
