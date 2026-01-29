@@ -171,14 +171,16 @@ bento subscribers import contacts.csv --confirm           # 3. Full import
 | `--confirm` | Skip interactive confirmation |
 
 **CSV Format**:
-- Must have `email` column
-- Additional columns map to subscriber fields
+- Must have `email` column (case-insensitive)
+- Special columns: `name`, `tags`, `remove_tags`
+- `tags`/`remove_tags` support comma or semicolon separators
+- Other columns become custom fields
 - First row is header
 
 ```csv
-email,first_name,last_name,plan
-alice@example.com,Alice,Smith,pro
-bob@example.com,Bob,Jones,starter
+email,name,tags,remove_tags,plan
+alice@example.com,Alice Smith,"customer,active",,pro
+bob@example.com,Bob Jones,newsletter,trial,starter
 ```
 
 ### subscribers tag

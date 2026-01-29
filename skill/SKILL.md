@@ -170,19 +170,30 @@ bento stats site                          # View site-wide stats
 
 ## CSV Format
 
-**For imports** (additional columns map to subscriber fields):
+**For imports** - requires `email` column, recognizes special columns:
+
+| Column | Description |
+|--------|-------------|
+| `email` | Required. Subscriber email |
+| `name` | Optional. Display name |
+| `tags` | Optional. Tags to add (comma/semicolon separated) |
+| `remove_tags` | Optional. Tags to remove |
+| *(other)* | Custom fields |
+
 ```csv
-email,first_name,last_name,plan
-alice@example.com,Alice,Smith,pro
-bob@example.com,Bob,Jones,starter
+email,name,tags,first_name,plan
+alice@example.com,Alice Smith,"customer,active",Alice,pro
+bob@example.com,Bob Jones,newsletter,Bob,starter
 ```
 
-**For tag operations** (simple email list):
+**For tag/unsubscribe operations** - simple email list or plain text:
 ```csv
 email
 alice@example.com
 bob@example.com
 ```
+
+Or one email per line (no header).
 
 ## Exit Codes
 

@@ -231,15 +231,35 @@ bento subscribers tag --file users.csv --add customer --confirm
 
 ## CSV Format
 
-For bulk imports, CSV files must have an `email` column. Additional columns map to subscriber fields:
+### For Subscriber Imports
 
+CSV files must have an `email` column (case-insensitive). The CLI recognizes these special columns:
+
+| Column | Description |
+|--------|-------------|
+| `email` | **Required**. Subscriber email address |
+| `name` | Optional. Subscriber display name |
+| `tags` | Optional. Tags to add (comma or semicolon separated) |
+| `remove_tags` | Optional. Tags to remove (comma or semicolon separated) |
+| *(other)* | Any other columns become custom fields |
+
+**Basic import with custom fields:**
 ```csv
 email,first_name,last_name,plan
 alice@example.com,Alice,Smith,pro
 bob@example.com,Bob,Jones,starter
 ```
 
-For tag operations, a simple list of emails works:
+**Import with inline tag assignment:**
+```csv
+email,name,tags,remove_tags,company
+jesse@example.com,Jesse Hanley,"customer,mql",lead,Acme Inc
+alice@example.com,Alice Smith,"newsletter,active",,Widgets Co
+```
+
+### For Email Lists (tag/unsubscribe operations)
+
+A simple CSV with an `email` column:
 
 ```csv
 email
@@ -247,7 +267,14 @@ alice@example.com
 bob@example.com
 ```
 
-Or just a plain text file with one email per line.
+Or a plain text file with one email per line (no header needed):
+
+```
+alice@example.com
+bob@example.com
+```
+
+**Note:** Email lists are automatically deduplicated and normalized to lowercase.
 
 ## Exit Codes
 
