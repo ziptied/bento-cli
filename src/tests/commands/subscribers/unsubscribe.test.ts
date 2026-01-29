@@ -12,12 +12,12 @@ function buildProgram(): Command {
   return program;
 }
 
-describe("subscribers suppress command", () => {
+describe("subscribers unsubscribe command", () => {
   afterEach(() => {
     output.reset();
   });
 
-  it("suppresses emails via unsubscribe", async () => {
+  it("unsubscribes a single email", async () => {
     const unsubscribeSpy = spyOn(bento, "unsubscribe").mockResolvedValue(null);
 
     const program = buildProgram();
@@ -25,7 +25,7 @@ describe("subscribers suppress command", () => {
       "node",
       "test",
       "subscribers",
-      "suppress",
+      "unsubscribe",
       "--email",
       "user@example.com",
       "--confirm",
@@ -36,23 +36,23 @@ describe("subscribers suppress command", () => {
     unsubscribeSpy.mockRestore();
   });
 
-  it("unsuppresses emails via subscribe", async () => {
-    const subscribeSpy = spyOn(bento, "subscribe").mockResolvedValue(null);
-
+  it("shows help with --help flag", async () => {
     const program = buildProgram();
-    await program.parseAsync([
-      "node",
-      "test",
-      "subscribers",
-      "suppress",
-      "--email",
-      "user@example.com",
-      "--unsuppress",
-      "--confirm",
-    ]);
 
-    expect(subscribeSpy).toHaveBeenCalledWith("user@example.com");
+    let helpOutput = "";
+    program.configureOutput({
+      writeOut: (str) => { helpOutput += str; },
+      writeErr: (str) => { helpOutput += str; },
+    });
 
-    subscribeSpy.mockRestore();
+    try {
+      await program.parseAsync(["node", "test", "subscribers", "unsubscribe", "--help"]);
+    } catch {
+      // Commander throws on --help with exitOverride
+    }
+
+    expect(helpOutput).toContain("Unsubscribe subscribers");
+    expect(helpOutput).toContain("--email");
+    expect(helpOutput).toContain("--file");
   });
 });
