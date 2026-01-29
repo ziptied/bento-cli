@@ -56,6 +56,7 @@ export function registerImportCommand(subscribers: Command): void {
             email: item.email,
             name: item.name ?? "",
             tags: item.tags?.join(", ") ?? "",
+            remove_tags: item.remove_tags?.join(", ") ?? "",
           }),
           isDangerous: true,
           preview: async () => {
@@ -70,6 +71,7 @@ export function registerImportCommand(subscribers: Command): void {
                 ...(item.name ? { name: item.name } : {}),
                 ...(item.fields ?? {}),
                 ...(item.tags ? { tags: item.tags.join(",") } : {}),
+                ...(item.remove_tags ? { remove_tags: item.remove_tags.join(",") } : {}),
               })),
             };
 
