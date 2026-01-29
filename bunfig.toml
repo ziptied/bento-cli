@@ -1,0 +1,6 @@
+[test]
+preload = ["./src/tests/setup.ts"]
+
+[install]
+# Use exact versions for reproducibility
+exact = true

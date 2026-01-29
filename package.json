@@ -13,7 +13,7 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@bentonow/bento-node-sdk": "^2.0.0",
+    "@bentonow/bento-node-sdk": "^1.0.5",
     "commander": "^12.1.0",
     "env-paths": "^3.0.0"
   },
@@ -28,12 +28,7 @@
     "type": "git",
     "url": "https://github.com/bentonow/bento-cli.git"
   },
-  "keywords": [
-    "bento",
-    "email",
-    "marketing",
-    "cli"
-  ],
+  "keywords": ["bento", "email", "marketing", "cli"],
   "author": "Bento",
   "license": "MIT"
 }
