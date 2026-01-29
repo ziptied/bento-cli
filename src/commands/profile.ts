@@ -14,6 +14,12 @@ import { config, ConfigError } from "../core/config";
 import { validateCredentials, bento } from "../core/sdk";
 import { output } from "../core/output";
 
+interface AddOptions {
+  publishableKey?: string;
+  secretKey?: string;
+  siteUuid?: string;
+}
+
 export function registerProfileCommands(program: Command): void {
   const profile = program
     .command("profile")
@@ -23,9 +29,10 @@ export function registerProfileCommands(program: Command): void {
     .command("add")
     .argument("<name>", "Name for the new profile")
     .description("Add a new profile")
-    .option("--api-key <key>", "API key (for non-interactive use)")
-    .option("--site-id <id>", "Site ID (for non-interactive use)")
-    .action(async (name: string, options: { apiKey?: string; siteId?: string }) => {
+    .option("--publishable-key <key>", "Publishable key (for non-interactive use)")
+    .option("--secret-key <key>", "Secret key (for non-interactive use)")
+    .option("--site-uuid <uuid>", "Site UUID (for non-interactive use)")
+    .action(async (name: string, options: AddOptions) => {
       try {
         // Check if profile already exists
         const exists = await config.hasProfile(name);
@@ -36,14 +43,16 @@ export function registerProfileCommands(program: Command): void {
           process.exit(1);
         }
 
-        let apiKey = options.apiKey;
-        let siteId = options.siteId;
+        let publishableKey = options.publishableKey;
+        let secretKey = options.secretKey;
+        let siteUuid = options.siteUuid;
 
         // Interactive mode if credentials not provided via flags
-        if (!apiKey || !siteId) {
-          if (!process.stdin.isTTY && (!apiKey || !siteId)) {
+        const needsInteractive = !publishableKey || !secretKey || !siteUuid;
+        if (needsInteractive) {
+          if (!process.stdin.isTTY) {
             output.error(
-              "Non-interactive mode requires --api-key and --site-id flags."
+              "Non-interactive mode requires --publishable-key, --secret-key, and --site-uuid flags."
             );
             process.exit(1);
           }
@@ -52,42 +61,55 @@ export function registerProfileCommands(program: Command): void {
           output.log("Find your credentials at: https://app.bentonow.com/settings/api");
           output.newline();
 
-          if (!apiKey) {
-            apiKey = await password({
-              message: "Enter your Bento API key:",
+          if (!publishableKey) {
+            publishableKey = await password({
+              message: "Enter your Publishable Key:",
               mask: "*",
             });
           }
 
-          if (!siteId) {
-            siteId = await input({
-              message: "Enter your Bento Site ID:",
+          if (!secretKey) {
+            secretKey = await password({
+              message: "Enter your Secret Key:",
+              mask: "*",
+            });
+          }
+
+          if (!siteUuid) {
+            siteUuid = await input({
+              message: "Enter your Site UUID:",
             });
           }
         }
 
         // Validate inputs
-        if (!apiKey?.trim()) {
-          output.error("API key cannot be empty.");
+        if (!publishableKey?.trim()) {
+          output.error("Publishable key cannot be empty.");
           process.exit(1);
         }
 
-        if (!siteId?.trim()) {
-          output.error("Site ID cannot be empty.");
+        if (!secretKey?.trim()) {
+          output.error("Secret key cannot be empty.");
           process.exit(1);
         }
 
-        apiKey = apiKey.trim();
-        siteId = siteId.trim();
+        if (!siteUuid?.trim()) {
+          output.error("Site UUID cannot be empty.");
+          process.exit(1);
+        }
+
+        publishableKey = publishableKey.trim();
+        secretKey = secretKey.trim();
+        siteUuid = siteUuid.trim();
 
         // Validate credentials against API
         output.startSpinner("Validating credentials...");
-        const isValid = await validateCredentials(apiKey, siteId);
+        const isValid = await validateCredentials(publishableKey, secretKey, siteUuid);
 
         if (!isValid) {
           output.failSpinner("Invalid credentials");
           output.error(
-            "Invalid credentials. Please check your API key and Site ID."
+            "Invalid credentials. Please check your Publishable Key, Secret Key, and Site UUID."
           );
           process.exit(1);
         }
@@ -95,13 +117,13 @@ export function registerProfileCommands(program: Command): void {
         output.stopSpinner("Credentials validated");
 
         // Save to config
-        await config.setProfile(name, { apiKey, siteId });
+        await config.setProfile(name, { publishableKey, secretKey, siteUuid });
 
         if (output.isJson()) {
           output.json({
             success: true,
             error: null,
-            data: { profile: name, siteId },
+            data: { profile: name, siteUuid },
             meta: { count: 1 },
           });
         } else {
@@ -146,7 +168,7 @@ export function registerProfileCommands(program: Command): void {
           return {
             name,
             current: name === cfg.current ? "✓" : "",
-            siteId: p.siteId,
+            siteUuid: p.siteUuid,
             created: formatDateShort(p.createdAt),
           };
         });
@@ -166,7 +188,7 @@ export function registerProfileCommands(program: Command): void {
             columns: [
               { key: "current", header: "" },
               { key: "name", header: "NAME" },
-              { key: "siteId", header: "SITE ID" },
+              { key: "siteUuid", header: "SITE UUID" },
               { key: "created", header: "CREATED" },
             ],
           });
