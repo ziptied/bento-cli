@@ -1,6 +1,6 @@
 import chalk from "chalk";
-import Table from "cli-table3";
 import ora, { type Ora } from "ora";
+import ttyTable from "tty-table";
 
 import type {
   CLIResponse,
@@ -164,24 +164,31 @@ export class Output {
     }
 
     const columns = options.columns ?? this.columnsFromItem(items[0]);
-    const table = new Table({
-      head: columns.map((col) => chalk.bold(col.header ?? String(col.key))),
-      style: { head: [], border: [] },
-      chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
-      colAligns: columns.map((col) => col.align ?? "left"),
+
+    const header = columns.map((col) => ({
+      value: col.header ?? String(col.key),
+      width: col.width ?? "auto",
+      truncate: col.truncate,
+      align: col.align ?? "left",
+      headerAlign: col.align ?? "left",
+    }));
+
+    const rows = items.map((item) =>
+      columns.map((col) => {
+        const rawValue = item[col.key];
+        const value = col.formatter ? col.formatter(rawValue, item) : rawValue;
+        return value === undefined || value === null ? "" : String(value);
+      }),
+    );
+
+    const table = ttyTable(header, rows, {
+      borderStyle: "solid",
+      borderColor: "gray",
+      width: "100%",
+      defaultValue: "",
     });
 
-    for (const item of items) {
-      table.push(
-        columns.map((col) => {
-          const rawValue = item[col.key];
-          const value = col.formatter ? col.formatter(rawValue, item) : rawValue;
-          return value === undefined || value === null ? "" : String(value);
-        }),
-      );
-    }
-
-    console.log(table.toString());
+    console.log(table.render());
 
     const total = options.meta?.total ?? items.length;
     if (total !== items.length) {

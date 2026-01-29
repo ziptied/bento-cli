@@ -13,7 +13,10 @@ export type {
 } from "@bentonow/bento-node-sdk/src/sdk/interfaces";
 
 // Subscriber types
-export type { Subscriber, SubscriberAttributes } from "@bentonow/bento-node-sdk/src/sdk/subscribers/types";
+export type {
+  Subscriber,
+  SubscriberAttributes,
+} from "@bentonow/bento-node-sdk/src/sdk/subscribers/types";
 
 // Tag types
 export type { Tag, TagAttributes } from "@bentonow/bento-node-sdk/src/sdk/tags/types";
@@ -22,7 +25,19 @@ export type { Tag, TagAttributes } from "@bentonow/bento-node-sdk/src/sdk/tags/t
 export type { Field, FieldAttributes } from "@bentonow/bento-node-sdk/src/sdk/fields/types";
 
 // Stats types
-export type { SiteStats, SegmentStats, ReportStats } from "@bentonow/bento-node-sdk/src/sdk/stats/types";
+export type {
+  SiteStats,
+  SegmentStats,
+  ReportStats,
+} from "@bentonow/bento-node-sdk/src/sdk/stats/types";
+
+// Broadcast types
+export type {
+  Broadcast,
+  BroadcastAttributes,
+  BroadcastType,
+  CreateBroadcastInput,
+} from "@bentonow/bento-node-sdk/src/sdk/broadcasts/types";
 
 // Base entity type
 export type { BaseEntity } from "@bentonow/bento-node-sdk/src/sdk/types";
@@ -41,11 +56,37 @@ export type SDKErrorCode =
   | "UNKNOWN";
 
 /**
- * Parameters for searching subscribers
+ * Parameters for fetching a single subscriber
  */
-export interface SearchSubscribersParams {
+export interface GetSubscriberParams {
   email?: string;
   uuid?: string;
+}
+
+export interface FieldFilter {
+  key: string;
+  value: string;
+  operator?: "eq" | "contains";
+}
+
+export interface SubscriberSearchParams extends GetSubscriberParams {
+  tag?: string;
+  fields?: FieldFilter[];
+  page?: number;
+  perPage?: number;
+}
+
+export interface SubscriberSearchMeta {
+  page: number;
+  perPage: number;
+  total?: number;
+  count: number;
+  hasMore?: boolean;
+}
+
+export interface SubscriberSearchResult {
+  subscribers: Subscriber<Record<string, unknown>>[];
+  meta: SubscriberSearchMeta;
 }
 
 /**
