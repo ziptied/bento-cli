@@ -116,7 +116,11 @@ export async function parseSubscriberCSV(filePath: string): Promise<SubscriberCS
       if (!value) continue;
       const normalizedColumn = column.trim();
       if (!normalizedColumn) continue;
-      if (equalsColumn(column, emailKey) || equalsColumn(column, nameKey) || equalsColumn(column, tagsKey)) {
+      if (
+        equalsColumn(column, emailKey) ||
+        equalsColumn(column, nameKey) ||
+        equalsColumn(column, tagsKey)
+      ) {
         continue;
       }
 
