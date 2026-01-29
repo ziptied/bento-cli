@@ -1,11 +1,11 @@
-import { basename, resolve } from "node:path";
 import { access } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 
 import { output } from "../../core/output";
-import { bento, CLIError } from "../../core/sdk";
+import { CLIError, bento } from "../../core/sdk";
+import type { SDKErrorCode } from "../../types/sdk";
 import type { CSVErrorDetail, EmailListParseResult } from "../../utils/csv";
 import { isValidEmail, normalizeEmail, parseEmailList } from "../../utils/csv";
-import type { SDKErrorCode } from "../../types/sdk";
 
 const exitCodeMap: Record<SDKErrorCode, number> = {
   AUTH_REQUIRED: 3,
@@ -39,11 +39,11 @@ export function printCsvErrors(errors: CSVErrorDetail[], max = 5): void {
   }
 
   output.error("CSV validation errors:");
-  errors.slice(0, max).forEach((err) => {
+  for (const err of errors.slice(0, max)) {
     const location = err.column ? `${err.column} (line ${err.line})` : `line ${err.line}`;
     const valueInfo = err.value ? ` - ${err.value}` : "";
     output.error(`  ${location}: ${err.message}${valueInfo}`);
-  });
+  }
 
   if (errors.length > max) {
     output.error(`  ...and ${errors.length - max} more error(s)`);
@@ -118,9 +118,9 @@ export async function lookupTagNames(tagIds: Set<string>): Promise<Map<string, s
     const tags = await bento.getTags();
     if (!tags) return lookup;
 
-    tags.forEach((tag) => {
+    for (const tag of tags) {
       lookup.set(tag.id, tag.attributes.name);
-    });
+    }
   } catch {
     // Ignore tag lookup failures – fall back to IDs
   }
