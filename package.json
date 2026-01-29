@@ -1,0 +1,39 @@
+{
+  "name": "@bentonow/bento-cli",
+  "version": "0.1.0",
+  "description": "Bento CLI - Command-oriented and conversational interface for Bento email marketing",
+  "type": "module",
+  "bin": {
+    "bento": "./bin/bento"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "test": "bun test",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@bentonow/bento-node-sdk": "^2.0.0",
+    "commander": "^12.1.0",
+    "env-paths": "^3.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "latest"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bentonow/bento-cli.git"
+  },
+  "keywords": [
+    "bento",
+    "email",
+    "marketing",
+    "cli"
+  ],
+  "author": "Bento",
+  "license": "MIT"
+}
