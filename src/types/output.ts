@@ -21,6 +21,8 @@ export interface TableColumn<T extends Record<string, unknown>> {
   header?: string;
   formatter?: (value: unknown, row: T) => string;
   align?: "left" | "center" | "right";
+  width?: number;
+  truncate?: string | boolean;
 }
 
 export interface TableOptions<T extends Record<string, unknown>> {
