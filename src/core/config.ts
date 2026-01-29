@@ -150,6 +150,14 @@ export class ConfigManager {
           "INVALID_SCHEMA"
         );
       }
+
+      if (typeof p.createdAt !== "string" || !p.createdAt) {
+        p.createdAt = new Date().toISOString();
+      }
+
+      if (typeof p.updatedAt !== "string" || !p.updatedAt) {
+        p.updatedAt = p.createdAt;
+      }
     }
 
     return data as BentoConfig;
