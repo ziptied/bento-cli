@@ -16,23 +16,25 @@ import {
   RateLimitedError,
   RequestTimeoutError,
 } from "@bentonow/bento-node-sdk";
-import { config } from "./config";
 import type { BentoProfile } from "../types/config";
 import type {
-  SDKErrorCode,
-  Subscriber,
-  Tag,
-  Field,
-  SiteStats,
-  ImportResult,
-  SearchSubscribersParams,
-  ImportSubscribersParams,
-  TrackEventParams,
-  TagSubscriberParams,
   AddFieldParams,
   Broadcast,
   CreateBroadcastInput,
+  Field,
+  GetSubscriberParams,
+  ImportResult,
+  ImportSubscribersParams,
+  SDKErrorCode,
+  SiteStats,
+  Subscriber,
+  SubscriberSearchParams,
+  SubscriberSearchResult,
+  Tag,
+  TagSubscriberParams,
+  TrackEventParams,
 } from "../types/sdk";
+import { config } from "./config";
 
 /**
  * CLI-specific error class with error codes
@@ -60,6 +62,7 @@ export class CLIError extends Error {
 export class BentoClient {
   private sdk: Analytics | null = null;
   private profile: BentoProfile | null = null;
+  private readonly apiBaseUrl = process.env.BENTO_API_BASE_URL ?? "https://app.bentonow.com/api/v1";
 
   /**
    * Get or create SDK instance with current profile credentials
@@ -71,10 +74,7 @@ export class BentoClient {
 
     const currentProfile = await config.getCurrentProfile();
     if (!currentProfile) {
-      throw new CLIError(
-        "Not authenticated. Run 'bento auth login' first.",
-        "AUTH_REQUIRED"
-      );
+      throw new CLIError("Not authenticated. Run 'bento auth login' first.", "AUTH_REQUIRED");
     }
 
     this.profile = currentProfile;
@@ -84,7 +84,7 @@ export class BentoClient {
         publishableKey: currentProfile.publishableKey,
         secretKey: currentProfile.secretKey,
       },
-      logErrors: process.env["DEBUG"]?.includes("bento"),
+      logErrors: process.env.DEBUG?.includes("bento"),
     });
 
     return this.sdk;
@@ -140,33 +140,99 @@ export class BentoClient {
    * Get a subscriber by email or UUID
    */
   async getSubscriber(
-    params: SearchSubscribersParams
+    params: GetSubscriberParams
   ): Promise<Subscriber<Record<string, unknown>> | null> {
     const sdk = await this.getClient();
-    
+
     if (!params.email && !params.uuid) {
       throw new CLIError(
         "Either email or uuid must be provided to search for a subscriber",
         "VALIDATION_ERROR"
       );
     }
-    
-    const sdkParams = params.email
-      ? { email: params.email }
-      : { uuid: params.uuid! };
-    return this.handleApiCall(() => sdk.V1.Subscribers.getSubscribers(sdkParams));
+
+    if (params.email) {
+      return this.handleApiCall(() => sdk.V1.Subscribers.getSubscribers({ email: params.email }));
+    }
+
+    return this.handleApiCall(() =>
+      sdk.V1.Subscribers.getSubscribers({ uuid: params.uuid as string })
+    );
+  }
+
+  async searchSubscribers(params: SubscriberSearchParams): Promise<SubscriberSearchResult> {
+    if (!params.email && !params.uuid && !params.tag && !params.fields?.length) {
+      throw new CLIError(
+        "Provide --email, --uuid, --tag, or --field to search subscribers.",
+        "VALIDATION_ERROR"
+      );
+    }
+
+    const page = params.page ?? 1;
+    const perPage = params.perPage ?? 25;
+
+    // Optimize: direct lookup when only email/uuid is provided
+    if ((params.email || params.uuid) && !params.tag && !params.fields?.length) {
+      const subscriber = await this.getSubscriber({
+        email: params.email,
+        uuid: params.uuid,
+      });
+      const list = subscriber ? [subscriber] : [];
+      return {
+        subscribers: list,
+        meta: {
+          page: 1,
+          perPage: list.length,
+          count: list.length,
+          total: list.length,
+          hasMore: false,
+        },
+      };
+    }
+
+    const query: Record<string, string | number> = {
+      page,
+      per_page: perPage,
+    };
+
+    if (params.email) query.email = params.email;
+    if (params.uuid) query.uuid = params.uuid;
+    if (params.tag) query.tag = params.tag;
+    if (params.fields) {
+      for (const filter of params.fields) {
+        if (!filter.key || !filter.value) continue;
+        const key = `fields[${filter.key}]`;
+        query[key] = filter.value;
+      }
+    }
+
+    const response = await this.apiGet<{
+      data?: Subscriber<Record<string, unknown>>[];
+      meta?: { total?: number; count?: number };
+    }>("/fetch/subscribers/search", query);
+
+    const subscribers = response.data ?? [];
+    const total = response.meta?.total ?? subscribers.length;
+    const count = response.meta?.count ?? subscribers.length;
+
+    return {
+      subscribers,
+      meta: {
+        page,
+        perPage,
+        total,
+        count,
+        hasMore: total ? page * perPage < total : undefined,
+      },
+    };
   }
 
   /**
    * Create a subscriber
    */
-  async createSubscriber(
-    email: string
-  ): Promise<Subscriber<Record<string, unknown>> | null> {
+  async createSubscriber(email: string): Promise<Subscriber<Record<string, unknown>> | null> {
     const sdk = await this.getClient();
-    return this.handleApiCall(() =>
-      sdk.V1.Subscribers.createSubscriber({ email })
-    );
+    return this.handleApiCall(() => sdk.V1.Subscribers.createSubscriber({ email }));
   }
 
   /**
@@ -180,7 +246,9 @@ export class BentoClient {
     const sdk = await this.getClient();
     const count = await this.handleApiCall(() =>
       sdk.V1.Batch.importSubscribers({
-        subscribers: params.subscribers as ({ email: string } & Partial<{ [key: string]: unknown }>)[],
+        subscribers: params.subscribers as ({ email: string } & Partial<{
+          [key: string]: unknown;
+        }>)[],
       })
     );
     return { imported: count };
@@ -191,17 +259,13 @@ export class BentoClient {
    */
   async addSubscriber(email: string, fields?: Record<string, unknown>): Promise<boolean> {
     const sdk = await this.getClient();
-    return this.handleApiCall(() =>
-      sdk.V1.addSubscriber({ email, fields })
-    );
+    return this.handleApiCall(() => sdk.V1.addSubscriber({ email, fields }));
   }
 
   /**
    * Unsubscribe a subscriber (does NOT trigger automations)
    */
-  async unsubscribe(
-    email: string
-  ): Promise<Subscriber<Record<string, unknown>> | null> {
+  async unsubscribe(email: string): Promise<Subscriber<Record<string, unknown>> | null> {
     const sdk = await this.getClient();
     return this.handleApiCall(() => sdk.V1.Commands.unsubscribe({ email }));
   }
@@ -209,9 +273,7 @@ export class BentoClient {
   /**
    * Subscribe (resubscribe) a subscriber (does NOT trigger automations)
    */
-  async subscribe(
-    email: string
-  ): Promise<Subscriber<Record<string, unknown>> | null> {
+  async subscribe(email: string): Promise<Subscriber<Record<string, unknown>> | null> {
     const sdk = await this.getClient();
     return this.handleApiCall(() => sdk.V1.Commands.subscribe({ email }));
   }
@@ -224,9 +286,7 @@ export class BentoClient {
     newEmail: string
   ): Promise<Subscriber<Record<string, unknown>> | null> {
     const sdk = await this.getClient();
-    return this.handleApiCall(() =>
-      sdk.V1.Commands.changeEmail({ oldEmail, newEmail })
-    );
+    return this.handleApiCall(() => sdk.V1.Commands.changeEmail({ oldEmail, newEmail }));
   }
 
   // ============================================================
@@ -281,9 +341,7 @@ export class BentoClient {
     tagName: string
   ): Promise<Subscriber<Record<string, unknown>> | null> {
     const sdk = await this.getClient();
-    return this.handleApiCall(() =>
-      sdk.V1.Commands.removeTag({ email, tagName })
-    );
+    return this.handleApiCall(() => sdk.V1.Commands.removeTag({ email, tagName }));
   }
 
   // ============================================================
@@ -329,18 +387,13 @@ export class BentoClient {
     fieldName: string
   ): Promise<Subscriber<Record<string, unknown>> | null> {
     const sdk = await this.getClient();
-    return this.handleApiCall(() =>
-      sdk.V1.Commands.removeField({ email, fieldName })
-    );
+    return this.handleApiCall(() => sdk.V1.Commands.removeField({ email, fieldName }));
   }
 
   /**
    * Update fields on a subscriber (TRIGGERS automations)
    */
-  async updateFields(
-    email: string,
-    fields: Record<string, unknown>
-  ): Promise<boolean> {
+  async updateFields(email: string, fields: Record<string, unknown>): Promise<boolean> {
     const sdk = await this.getClient();
     return this.handleApiCall(() => sdk.V1.updateFields({ email, fields }));
   }
@@ -499,11 +552,7 @@ export class BentoClient {
       }
 
       if (message.includes("timeout")) {
-        return new CLIError(
-          "Request timed out. Please try again.",
-          "TIMEOUT",
-          408
-        );
+        return new CLIError("Request timed out. Please try again.", "TIMEOUT", 408);
       }
 
       if (
@@ -511,17 +560,98 @@ export class BentoClient {
         message.includes("validation") ||
         message.includes("invalid")
       ) {
-        return new CLIError(
-          `Validation error: ${error.message}`,
-          "VALIDATION_ERROR",
-          422
-        );
+        return new CLIError(`Validation error: ${error.message}`, "VALIDATION_ERROR", 422);
       }
 
       return new CLIError(error.message, "API_ERROR");
     }
 
     return new CLIError("An unexpected error occurred", "UNKNOWN");
+  }
+
+  private async ensureProfileLoaded(): Promise<BentoProfile> {
+    if (!this.profile) {
+      await this.getClient();
+    }
+
+    if (!this.profile) {
+      throw new CLIError("Not authenticated. Run 'bento auth login' first.", "AUTH_REQUIRED");
+    }
+
+    return this.profile;
+  }
+
+  private async apiGet<T>(
+    path: string,
+    query: Record<string, string | number | undefined> = {}
+  ): Promise<T> {
+    const profile = await this.ensureProfileLoaded();
+    const url = new URL(`${this.apiBaseUrl}${path}`);
+    url.searchParams.set("site_uuid", profile.siteUuid);
+
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null) continue;
+      url.searchParams.set(key, String(value));
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: this.buildAuthHeaders(profile),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw this.createHttpError(response.status, body || response.statusText);
+    }
+
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new CLIError("Invalid JSON response from Bento API.", "API_ERROR", response.status);
+    }
+  }
+
+  private buildAuthHeaders(profile: BentoProfile): Record<string, string> {
+    const token = Buffer.from(`${profile.publishableKey}:${profile.secretKey}`).toString("base64");
+
+    return {
+      Authorization: `Basic ${token}`,
+      "User-Agent": `bento-cli/${profile.siteUuid}`,
+      Accept: "application/json",
+    };
+  }
+
+  private createHttpError(status: number, message: string): CLIError {
+    switch (status) {
+      case 401:
+        return new CLIError(
+          "Authentication failed: Invalid credentials. Run 'bento auth login' to re-authenticate.",
+          "AUTH_FAILED",
+          status
+        );
+      case 403:
+        return new CLIError(
+          "Access denied: Your API key does not have permission for this operation.",
+          "AUTH_FAILED",
+          status
+        );
+      case 404:
+        return new CLIError("Resource not found.", "NOT_FOUND", status);
+      case 422:
+        return new CLIError(`Validation error: ${message}`, "VALIDATION_ERROR", status);
+      case 429:
+        return new CLIError(
+          "Rate limited: Too many requests. Retry in 30 seconds.",
+          "RATE_LIMITED",
+          status
+        );
+      default:
+        return new CLIError(
+          `Request failed (${status}): ${message}`,
+          status >= 500 ? "API_ERROR" : "UNKNOWN",
+          status
+        );
+    }
   }
 }
 
