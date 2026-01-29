@@ -222,6 +222,9 @@ export function registerAuthCommands(program: Command): void {
  * Mask an API key for display, showing only first and last few characters
  */
 function maskApiKey(apiKey: string): string {
+  if (apiKey.length <= 4) {
+    return "*".repeat(apiKey.length);
+  }
   if (apiKey.length <= 12) {
     return `${apiKey.slice(0, 4)}${"*".repeat(apiKey.length - 4)}`;
   }
