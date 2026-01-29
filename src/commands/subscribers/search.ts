@@ -2,7 +2,12 @@ import type { Command } from "commander";
 
 import { output } from "../../core/output";
 import { bento } from "../../core/sdk";
-import type { FieldFilter, Subscriber, SubscriberSearchResult } from "../../types/sdk";
+import type {
+  FieldFilter,
+  Subscriber,
+  SubscriberSearchMeta,
+  SubscriberSearchParams,
+} from "../../types/sdk";
 import { handleSubscriberError, lookupTagNames, requireAtLeastOneFilter } from "./helpers";
 
 interface SearchCommandOptions {
@@ -48,9 +53,12 @@ export function registerSearchCommand(subscribers: Command): void {
       const uuid = options.uuid?.trim() || undefined;
       const tag = options.tag?.trim() || undefined;
 
-      requireAtLeastOneFilter(Boolean(email || uuid || tag || fieldFilters.length > 0), "Provide --email, --uuid, --tag, or --field to search.");
+      requireAtLeastOneFilter(
+        Boolean(email || uuid || tag || fieldFilters.length > 0),
+        "Provide --email, --uuid, --tag, or --field to search."
+      );
 
-      const params: SubscriberSearchResult["params"] = {
+      const params: SubscriberSearchParams = {
         email,
         uuid,
         tag,
@@ -105,12 +113,14 @@ async function renderResults(
   meta: SubscriberSearchMeta
 ): Promise<void> {
   const tagIds = new Set<string>();
-  subscribers.forEach((subscriber) => {
+  for (const subscriber of subscribers) {
     const ids = subscriber.attributes.cached_tag_ids ?? [];
-    ids.forEach((id) => {
-      if (id) tagIds.add(id);
-    });
-  });
+    for (const id of ids) {
+      if (id) {
+        tagIds.add(id);
+      }
+    }
+  }
 
   const tagLookup = await lookupTagNames(tagIds);
   const rows = subscribers.map((subscriber) => buildRow(subscriber, tagLookup));
@@ -148,11 +158,11 @@ async function renderResults(
     })),
     {
       columns: [
-        { key: "email", header: "EMAIL" },
-        { key: "name", header: "NAME" },
-        { key: "status", header: "STATUS" },
-        { key: "tags", header: "TAGS" },
-        { key: "fields", header: "FIELDS" },
+        { key: "email", header: "EMAIL", width: 25 },
+        { key: "name", header: "NAME", width: 15 },
+        { key: "status", header: "STATUS", width: 12 },
+        { key: "tags", header: "TAGS", width: 30 },
+        { key: "fields", header: "FIELDS", width: 25 },
       ],
       emptyMessage: "No subscribers found.",
       meta: { total: meta.total },
@@ -199,7 +209,9 @@ function deriveName(fields: Record<string, unknown>): string {
 }
 
 function summarizeFields(fields: Record<string, unknown>): string {
-  const entries = Object.entries(fields).filter(([, value]) => typeof value !== "undefined" && value !== null && String(value).trim() !== "");
+  const entries = Object.entries(fields).filter(
+    ([, value]) => typeof value !== "undefined" && value !== null && String(value).trim() !== ""
+  );
   if (entries.length === 0) {
     return "";
   }
