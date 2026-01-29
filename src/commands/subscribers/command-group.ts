@@ -1,9 +1,9 @@
 import type { Command } from "commander";
 
-import { registerSearchCommand } from "./search";
 import { registerImportCommand } from "./import";
-import { registerTagCommand } from "./tag";
+import { registerSearchCommand } from "./search";
 import { registerSuppressCommand } from "./suppress";
+import { registerTagCommand } from "./tag";
 
 export function registerSubscribersCommands(program: Command): void {
   const subscribers = program.command("subscribers").description("Manage subscribers");
