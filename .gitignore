@@ -7,6 +7,7 @@ dist/
 
 # Bun
 bun.lockb
+bun.lock
 
 # IDE
 .idea/
@@ -29,11 +30,24 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Claude/AI
+# npm
+*.tgz
+.npm/
+
+# Temporary files
+tmp/
+temp/
+
+# Claude/AI assistant configs
 .claude/
 .codex/
 AGENTS.md
 
-# Project root markdown files
-/*.md
+# Working documents (not part of published package)
+PLANS.md
+CLI_SPEC.md
+*-results.md
+*-test-commands.md
