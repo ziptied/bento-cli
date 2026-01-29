@@ -14,8 +14,11 @@
   },
   "dependencies": {
     "@bentonow/bento-node-sdk": "^1.0.5",
+    "chalk": "5.6.2",
+    "cli-table3": "0.6.5",
     "commander": "^12.1.0",
-    "env-paths": "^3.0.0"
+    "env-paths": "^3.0.0",
+    "ora": "9.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
