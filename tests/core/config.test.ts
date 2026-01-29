@@ -54,8 +54,9 @@ describe("ConfigManager", () => {
         current: "prod",
         profiles: {
           prod: {
-            apiKey: "prod-key",
-            siteId: "prod-site",
+            publishableKey: "prod-pub-key",
+            secretKey: "prod-secret-key",
+            siteUuid: "prod-site-uuid",
             createdAt: "2024-01-01T00:00:00.000Z",
             updatedAt: "2024-01-01T00:00:00.000Z",
           },
@@ -68,7 +69,7 @@ describe("ConfigManager", () => {
 
       expect(config.version).toBe(1);
       expect(config.current).toBe("prod");
-      expect(config.profiles.prod.apiKey).toBe("prod-key");
+      expect(config.profiles.prod.publishableKey).toBe("prod-pub-key");
     });
 
     it("caches config after first load", async () => {
@@ -108,12 +109,12 @@ describe("ConfigManager", () => {
       });
     });
 
-    it("throws ConfigError for profile with missing apiKey", async () => {
+    it("throws ConfigError for profile with missing credentials", async () => {
       const invalidConfig = {
         version: 1,
         current: null,
         profiles: {
-          bad: { siteId: "site" },
+          bad: { siteUuid: "site" },
         },
       };
       await writeFile(configPath, JSON.stringify(invalidConfig));
@@ -124,12 +125,12 @@ describe("ConfigManager", () => {
       });
     });
 
-    it("throws ConfigError for profile with missing siteId", async () => {
+    it("throws ConfigError for profile with incomplete credentials", async () => {
       const invalidConfig = {
         version: 1,
         current: null,
         profiles: {
-          bad: { apiKey: "key" },
+          bad: { publishableKey: "key", secretKey: "secret" }, // missing siteUuid
         },
       };
       await writeFile(configPath, JSON.stringify(invalidConfig));
@@ -140,18 +141,18 @@ describe("ConfigManager", () => {
       });
     });
 
-    it("backfills timestamps for legacy profiles missing them", async () => {
-      const legacyConfig = {
+    it("backfills timestamps for profiles missing them", async () => {
+      const config = {
         version: 1,
         current: "prod",
         profiles: {
-          prod: { apiKey: "key", siteId: "site" },
+          prod: { publishableKey: "key", secretKey: "secret", siteUuid: "site" },
         },
       };
-      await writeFile(configPath, JSON.stringify(legacyConfig));
+      await writeFile(configPath, JSON.stringify(config));
 
-      const config = await configManager.load();
-      const profile = config.profiles.prod;
+      const loadedConfig = await configManager.load();
+      const profile = loadedConfig.profiles.prod;
 
       expect(typeof profile.createdAt).toBe("string");
       expect(typeof profile.updatedAt).toBe("string");
@@ -160,33 +161,54 @@ describe("ConfigManager", () => {
       expect(profile.createdAt).toBe(profile.updatedAt);
     });
 
-    it("preserves provided timestamps but fixes invalid or missing ones", async () => {
+    it("migrates legacy format (apiKey, siteId) to new format", async () => {
       const legacyConfig = {
         version: 1,
-        current: "partial",
+        current: "prod",
         profiles: {
-          partial: {
-            apiKey: "key",
-            siteId: "site",
-            createdAt: "2024-01-01T00:00:00.000Z",
-          },
-          malformed: {
-            apiKey: "key",
-            siteId: "site",
-            createdAt: 123,
-            updatedAt: 456,
-          },
+          prod: { apiKey: "legacy-key", siteId: "legacy-site" },
         },
       };
       await writeFile(configPath, JSON.stringify(legacyConfig));
 
       const config = await configManager.load();
+      const profile = config.profiles.prod;
 
-      expect(config.profiles.partial.createdAt).toBe("2024-01-01T00:00:00.000Z");
-      expect(config.profiles.partial.updatedAt).toBe("2024-01-01T00:00:00.000Z");
+      // Should have migrated to new format
+      expect(profile.publishableKey).toBe("legacy-key");
+      expect(profile.secretKey).toBe("legacy-key");
+      expect(profile.siteUuid).toBe("legacy-site");
+    });
 
-      expect(Number.isNaN(Date.parse(config.profiles.malformed.createdAt))).toBeFalse();
-      expect(config.profiles.malformed.createdAt).toBe(config.profiles.malformed.updatedAt);
+    it("preserves provided timestamps but fixes invalid or missing ones", async () => {
+      const config = {
+        version: 1,
+        current: "partial",
+        profiles: {
+          partial: {
+            publishableKey: "key",
+            secretKey: "secret",
+            siteUuid: "site",
+            createdAt: "2024-01-01T00:00:00.000Z",
+          },
+          malformed: {
+            publishableKey: "key",
+            secretKey: "secret",
+            siteUuid: "site",
+            createdAt: 123,
+            updatedAt: 456,
+          },
+        },
+      };
+      await writeFile(configPath, JSON.stringify(config));
+
+      const loadedConfig = await configManager.load();
+
+      expect(loadedConfig.profiles.partial.createdAt).toBe("2024-01-01T00:00:00.000Z");
+      expect(loadedConfig.profiles.partial.updatedAt).toBe("2024-01-01T00:00:00.000Z");
+
+      expect(Number.isNaN(Date.parse(loadedConfig.profiles.malformed.createdAt))).toBeFalse();
+      expect(loadedConfig.profiles.malformed.createdAt).toBe(loadedConfig.profiles.malformed.updatedAt);
     });
   });
 
@@ -225,23 +247,26 @@ describe("ConfigManager", () => {
   describe("setProfile()", () => {
     it("adds a new profile", async () => {
       await configManager.setProfile("prod", {
-        apiKey: "test-key",
-        siteId: "test-site",
+        publishableKey: "test-pub-key",
+        secretKey: "test-secret-key",
+        siteUuid: "test-site-uuid",
       });
 
       const profiles = await configManager.listProfiles();
       expect(profiles).toContain("prod");
 
       const profile = await configManager.getProfile("prod");
-      expect(profile?.apiKey).toBe("test-key");
-      expect(profile?.siteId).toBe("test-site");
+      expect(profile?.publishableKey).toBe("test-pub-key");
+      expect(profile?.secretKey).toBe("test-secret-key");
+      expect(profile?.siteUuid).toBe("test-site-uuid");
     });
 
     it("sets createdAt and updatedAt timestamps", async () => {
       const before = Date.now() - 1; // Add 1ms buffer for timing variance
       await configManager.setProfile("prod", {
-        apiKey: "test-key",
-        siteId: "test-site",
+        publishableKey: "test-pub-key",
+        secretKey: "test-secret-key",
+        siteUuid: "test-site-uuid",
       });
       const after = Date.now() + 1; // Add 1ms buffer for timing variance
 
@@ -256,8 +281,9 @@ describe("ConfigManager", () => {
 
     it("updates existing profile and preserves createdAt", async () => {
       await configManager.setProfile("prod", {
-        apiKey: "old-key",
-        siteId: "old-site",
+        publishableKey: "old-pub-key",
+        secretKey: "old-secret-key",
+        siteUuid: "old-site-uuid",
       });
 
       const originalProfile = await configManager.getProfile("prod");
@@ -267,53 +293,57 @@ describe("ConfigManager", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       await configManager.setProfile("prod", {
-        apiKey: "new-key",
-        siteId: "new-site",
+        publishableKey: "new-pub-key",
+        secretKey: "new-secret-key",
+        siteUuid: "new-site-uuid",
       });
 
       const updatedProfile = await configManager.getProfile("prod");
-      expect(updatedProfile?.apiKey).toBe("new-key");
-      expect(updatedProfile?.siteId).toBe("new-site");
+      expect(updatedProfile?.publishableKey).toBe("new-pub-key");
+      expect(updatedProfile?.secretKey).toBe("new-secret-key");
+      expect(updatedProfile?.siteUuid).toBe("new-site-uuid");
       expect(updatedProfile?.createdAt).toBe(originalCreatedAt);
       expect(updatedProfile?.updatedAt).not.toBe(originalCreatedAt);
     });
 
     it("persists profile to disk", async () => {
       await configManager.setProfile("prod", {
-        apiKey: "test-key",
-        siteId: "test-site",
+        publishableKey: "test-pub-key",
+        secretKey: "test-secret-key",
+        siteUuid: "test-site-uuid",
       });
 
       // Read directly from disk
       const content = await readFile(configPath, "utf-8");
       const parsed = JSON.parse(content);
 
-      expect(parsed.profiles.prod.apiKey).toBe("test-key");
-      expect(parsed.profiles.prod.siteId).toBe("test-site");
+      expect(parsed.profiles.prod.publishableKey).toBe("test-pub-key");
+      expect(parsed.profiles.prod.secretKey).toBe("test-secret-key");
+      expect(parsed.profiles.prod.siteUuid).toBe("test-site-uuid");
     });
 
     it("throws ConfigError for empty profile name", async () => {
       await expect(
-        configManager.setProfile("", { apiKey: "key", siteId: "site" })
+        configManager.setProfile("", { publishableKey: "key", secretKey: "secret", siteUuid: "site" })
       ).rejects.toThrow(ConfigError);
       await expect(
-        configManager.setProfile("", { apiKey: "key", siteId: "site" })
+        configManager.setProfile("", { publishableKey: "key", secretKey: "secret", siteUuid: "site" })
       ).rejects.toMatchObject({ code: "INVALID_NAME" });
     });
 
     it("throws ConfigError for invalid profile name characters", async () => {
       await expect(
-        configManager.setProfile("my profile", { apiKey: "key", siteId: "site" })
+        configManager.setProfile("my profile", { publishableKey: "key", secretKey: "secret", siteUuid: "site" })
       ).rejects.toThrow(ConfigError);
       await expect(
-        configManager.setProfile("my/profile", { apiKey: "key", siteId: "site" })
+        configManager.setProfile("my/profile", { publishableKey: "key", secretKey: "secret", siteUuid: "site" })
       ).rejects.toThrow(ConfigError);
     });
 
     it("allows valid profile names", async () => {
-      await configManager.setProfile("prod-env", { apiKey: "key", siteId: "site" });
-      await configManager.setProfile("staging_env", { apiKey: "key", siteId: "site" });
-      await configManager.setProfile("dev123", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod-env", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
+      await configManager.setProfile("staging_env", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
+      await configManager.setProfile("dev123", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
 
       const profiles = await configManager.listProfiles();
       expect(profiles).toContain("prod-env");
@@ -324,7 +354,7 @@ describe("ConfigManager", () => {
 
   describe("removeProfile()", () => {
     it("removes an existing profile", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
       expect(await configManager.hasProfile("prod")).toBe(true);
 
       const removed = await configManager.removeProfile("prod");
@@ -339,7 +369,7 @@ describe("ConfigManager", () => {
     });
 
     it("sets current to null if removed profile was current", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
       await configManager.useProfile("prod");
 
       expect(await configManager.getCurrentProfileName()).toBe("prod");
@@ -350,8 +380,8 @@ describe("ConfigManager", () => {
     });
 
     it("does not affect current if removed profile was not current", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
-      await configManager.setProfile("staging", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
+      await configManager.setProfile("staging", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
       await configManager.useProfile("staging");
 
       await configManager.removeProfile("prod");
@@ -360,7 +390,7 @@ describe("ConfigManager", () => {
     });
 
     it("persists removal to disk", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
       await configManager.removeProfile("prod");
 
       const content = await readFile(configPath, "utf-8");
@@ -372,8 +402,8 @@ describe("ConfigManager", () => {
 
   describe("useProfile()", () => {
     it("switches to an existing profile", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
-      await configManager.setProfile("staging", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
+      await configManager.setProfile("staging", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
 
       await configManager.useProfile("staging");
 
@@ -388,8 +418,8 @@ describe("ConfigManager", () => {
     });
 
     it("includes available profiles in error message", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
-      await configManager.setProfile("staging", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
+      await configManager.setProfile("staging", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
 
       try {
         await configManager.useProfile("nonexistent");
@@ -401,7 +431,7 @@ describe("ConfigManager", () => {
     });
 
     it("persists current profile to disk", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
       await configManager.useProfile("prod");
 
       const content = await readFile(configPath, "utf-8");
@@ -418,13 +448,14 @@ describe("ConfigManager", () => {
     });
 
     it("returns the current profile", async () => {
-      await configManager.setProfile("prod", { apiKey: "prod-key", siteId: "prod-site" });
+      await configManager.setProfile("prod", { publishableKey: "prod-pub-key", secretKey: "prod-secret-key", siteUuid: "prod-site-uuid" });
       await configManager.useProfile("prod");
 
       const profile = await configManager.getCurrentProfile();
 
-      expect(profile?.apiKey).toBe("prod-key");
-      expect(profile?.siteId).toBe("prod-site");
+      expect(profile?.publishableKey).toBe("prod-pub-key");
+      expect(profile?.secretKey).toBe("prod-secret-key");
+      expect(profile?.siteUuid).toBe("prod-site-uuid");
     });
 
     it("returns null if current profile name does not exist in profiles", async () => {
@@ -444,9 +475,9 @@ describe("ConfigManager", () => {
     });
 
     it("returns all profile names", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
-      await configManager.setProfile("staging", { apiKey: "key", siteId: "site" });
-      await configManager.setProfile("dev", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
+      await configManager.setProfile("staging", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
+      await configManager.setProfile("dev", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
 
       const profiles = await configManager.listProfiles();
 
@@ -463,7 +494,7 @@ describe("ConfigManager", () => {
     });
 
     it("returns true for existing profile", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
       expect(await configManager.hasProfile("prod")).toBe(true);
     });
   });
@@ -476,22 +507,22 @@ describe("ConfigManager", () => {
 
   describe("resetCache()", () => {
     it("forces reload from disk on next load", async () => {
-      await configManager.setProfile("prod", { apiKey: "key", siteId: "site" });
+      await configManager.setProfile("prod", { publishableKey: "key", secretKey: "secret", siteUuid: "site" });
 
       // Modify file directly
       const content = await readFile(configPath, "utf-8");
       const parsed = JSON.parse(content);
-      parsed.profiles.prod.apiKey = "modified-key";
+      parsed.profiles.prod.publishableKey = "modified-key";
       await writeFile(configPath, JSON.stringify(parsed));
 
       // Without resetCache, would still see cached value
       const cachedProfile = await configManager.getProfile("prod");
-      expect(cachedProfile?.apiKey).toBe("key");
+      expect(cachedProfile?.publishableKey).toBe("key");
 
       // After resetCache, should see new value
       configManager.resetCache();
       const freshProfile = await configManager.getProfile("prod");
-      expect(freshProfile?.apiKey).toBe("modified-key");
+      expect(freshProfile?.publishableKey).toBe("modified-key");
     });
   });
 
@@ -499,15 +530,16 @@ describe("ConfigManager", () => {
     it("persists data across ConfigManager instances", async () => {
       // First instance: create profile
       const manager1 = new ConfigManager(configPath);
-      await manager1.setProfile("prod", { apiKey: "prod-key", siteId: "prod-site" });
+      await manager1.setProfile("prod", { publishableKey: "prod-pub-key", secretKey: "prod-secret-key", siteUuid: "prod-site-uuid" });
       await manager1.useProfile("prod");
 
       // Second instance: should see the data
       const manager2 = new ConfigManager(configPath);
       const profile = await manager2.getCurrentProfile();
 
-      expect(profile?.apiKey).toBe("prod-key");
-      expect(profile?.siteId).toBe("prod-site");
+      expect(profile?.publishableKey).toBe("prod-pub-key");
+      expect(profile?.secretKey).toBe("prod-secret-key");
+      expect(profile?.siteUuid).toBe("prod-site-uuid");
       expect(await manager2.getCurrentProfileName()).toBe("prod");
     });
   });

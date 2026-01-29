@@ -3,8 +3,9 @@
  */
 
 export interface BentoProfile {
-  apiKey: string;
-  siteId: string;
+  publishableKey: string;
+  secretKey: string;
+  siteUuid: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,3 +23,13 @@ export const DEFAULT_CONFIG: BentoConfig = {
 };
 
 export type ProfileInput = Omit<BentoProfile, "createdAt" | "updatedAt">;
+
+/**
+ * Legacy profile format for migration support
+ */
+export interface LegacyBentoProfile {
+  apiKey: string;
+  siteId: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

@@ -40,6 +40,9 @@ export class ConfigManager {
   constructor(configPath?: string) {
     if (configPath) {
       this.configPath = configPath;
+    } else if (process.env.BENTO_CONFIG_PATH) {
+      // Support config path override via environment variable (for testing)
+      this.configPath = process.env.BENTO_CONFIG_PATH;
     } else {
       const paths = envPaths("bento", { suffix: "" });
       // Use data path for Application Support on macOS (per spec)
@@ -138,17 +141,31 @@ export class ConfigManager {
       }
 
       const p = profile as Record<string, unknown>;
-      if (typeof p.apiKey !== "string" || !p.apiKey) {
+
+      // Check for new format (publishableKey, secretKey, siteUuid)
+      const hasNewFormat =
+        typeof p.publishableKey === "string" &&
+        typeof p.secretKey === "string" &&
+        typeof p.siteUuid === "string";
+
+      // Check for legacy format (apiKey, siteId) and migrate
+      const hasLegacyFormat =
+        typeof p.apiKey === "string" && typeof p.siteId === "string";
+
+      if (!hasNewFormat && !hasLegacyFormat) {
         throw new ConfigError(
-          `Profile '${name}' must have a valid 'apiKey' string`,
+          `Profile '${name}' must have valid credentials (publishableKey, secretKey, siteUuid)`,
           "INVALID_SCHEMA"
         );
       }
-      if (typeof p.siteId !== "string" || !p.siteId) {
-        throw new ConfigError(
-          `Profile '${name}' must have a valid 'siteId' string`,
-          "INVALID_SCHEMA"
-        );
+
+      // Migrate legacy format to new format
+      if (hasLegacyFormat && !hasNewFormat) {
+        p.publishableKey = p.apiKey;
+        p.secretKey = p.apiKey;
+        p.siteUuid = p.siteId;
+        delete p.apiKey;
+        delete p.siteId;
       }
 
       if (typeof p.createdAt !== "string" || !p.createdAt) {
@@ -239,8 +256,9 @@ export class ConfigManager {
 
     const existingProfile = config.profiles[name];
     config.profiles[name] = {
-      apiKey: profile.apiKey,
-      siteId: profile.siteId,
+      publishableKey: profile.publishableKey,
+      secretKey: profile.secretKey,
+      siteUuid: profile.siteUuid,
       createdAt: existingProfile?.createdAt || now,
       updatedAt: now,
     };

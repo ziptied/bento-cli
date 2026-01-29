@@ -77,10 +77,10 @@ export class BentoClient {
 
     this.profile = currentProfile;
     this.sdk = new Analytics({
-      siteUuid: currentProfile.siteId,
+      siteUuid: currentProfile.siteUuid,
       authentication: {
-        publishableKey: currentProfile.apiKey,
-        secretKey: currentProfile.apiKey,
+        publishableKey: currentProfile.publishableKey,
+        secretKey: currentProfile.secretKey,
       },
       logErrors: process.env["DEBUG"]?.includes("bento"),
     });
@@ -93,13 +93,17 @@ export class BentoClient {
    *
    * Makes a lightweight API call (getSiteStats) to verify the credentials are valid.
    */
-  async validateCredentials(apiKey: string, siteId: string): Promise<boolean> {
+  async validateCredentials(
+    publishableKey: string,
+    secretKey: string,
+    siteUuid: string
+  ): Promise<boolean> {
     try {
       const tempSdk = new Analytics({
-        siteUuid: siteId,
+        siteUuid,
         authentication: {
-          publishableKey: apiKey,
-          secretKey: apiKey,
+          publishableKey,
+          secretKey,
         },
       });
 
@@ -504,10 +508,11 @@ export const bento = new BentoClient();
 
 // Convenience function for credential validation
 export async function validateCredentials(
-  apiKey: string,
-  siteId: string
+  publishableKey: string,
+  secretKey: string,
+  siteUuid: string
 ): Promise<boolean> {
-  return new BentoClient().validateCredentials(apiKey, siteId);
+  return new BentoClient().validateCredentials(publishableKey, secretKey, siteUuid);
 }
 
 // Re-export CLIError for commands to use

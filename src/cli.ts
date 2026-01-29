@@ -1,6 +1,8 @@
 import { Command } from "commander";
 
 import { output } from "./core/output";
+import { registerAuthCommands } from "./commands/auth";
+import { registerProfileCommands } from "./commands/profile";
 
 const program = new Command();
 
@@ -31,9 +33,11 @@ program
     program.outputHelp();
   });
 
-// Commands will be registered here as they are implemented:
-// - auth (login, logout, status)
-// - profile (add, list, use, remove)
+// Register command groups
+registerAuthCommands(program);
+registerProfileCommands(program);
+
+// Future commands to be implemented:
 // - subscribers (search, import, tag, suppress)
 // - tags (list, create, delete)
 // - fields (list, create)
