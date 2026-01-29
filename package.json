@@ -1,16 +1,25 @@
 {
   "name": "@bentonow/bento-cli",
   "version": "0.1.0",
-  "description": "Bento CLI - Command-oriented and conversational interface for Bento email marketing",
+  "description": "Command-line interface for Bento email marketing. Manage subscribers, tags, events, and broadcasts from your terminal.",
   "type": "module",
   "bin": {
     "bento": "./bin/bento"
   },
+  "files": [
+    "bin",
+    "dist",
+    "skill",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "dev": "bun run src/cli.ts",
+    "build": "bun run scripts/build.ts",
     "test": "bun test",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "prepublishOnly": "bun test && bun run build"
   },
   "dependencies": {
     "@bentonow/bento-node-sdk": "^1.0.5",
@@ -27,13 +36,40 @@
     "@types/bun": "latest"
   },
   "engines": {
+    "node": ">=18.0.0",
     "bun": ">=1.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/bentonow/bento-cli.git"
+    "url": "git+https://github.com/bentonow/bento-cli.git"
   },
-  "keywords": ["bento", "email", "marketing", "cli"],
-  "author": "Bento",
-  "license": "MIT"
+  "homepage": "https://github.com/bentonow/bento-cli#readme",
+  "bugs": {
+    "url": "https://github.com/bentonow/bento-cli/issues"
+  },
+  "keywords": [
+    "bento",
+    "email",
+    "marketing",
+    "cli",
+    "newsletter",
+    "subscribers",
+    "automation",
+    "email-marketing"
+  ],
+  "author": {
+    "name": "Zachary Oakes",
+    "email": "zachary.oakes@gmail.com"
+  },
+  "contributors": [
+    {
+      "name": "Zachary Oakes",
+      "email": "zachary.oakes@gmail.com"
+    }
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }
