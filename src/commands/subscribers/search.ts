@@ -2,7 +2,7 @@ import type { Command } from "commander";
 
 import { output } from "../../core/output";
 import { bento } from "../../core/sdk";
-import type { FieldFilter, Subscriber, SubscriberSearchParams } from "../../types/sdk";
+import type { FieldFilter, Subscriber, SubscriberSearchResult } from "../../types/sdk";
 import { handleSubscriberError, lookupTagNames, requireAtLeastOneFilter } from "./helpers";
 
 interface SearchCommandOptions {
@@ -50,7 +50,7 @@ export function registerSearchCommand(subscribers: Command): void {
 
       requireAtLeastOneFilter(Boolean(email || uuid || tag || fieldFilters.length > 0), "Provide --email, --uuid, --tag, or --field to search.");
 
-      const params: SubscriberSearchParams = {
+      const params: SubscriberSearchResult["params"] = {
         email,
         uuid,
         tag,
@@ -100,9 +100,10 @@ function parseFieldFilters(values: string[]): FieldFilter[] {
   });
 }
 
-async function renderResults(subscribers: Subscriber<Record<string, unknown>>[], meta: SubscriberSearchParams["meta"] extends never
-  ? { page: number; perPage: number; total?: number; count: number; hasMore?: boolean }
-  : never): Promise<void> {
+async function renderResults(
+  subscribers: Subscriber<Record<string, unknown>>[],
+  meta: SubscriberSearchMeta
+): Promise<void> {
   const tagIds = new Set<string>();
   subscribers.forEach((subscriber) => {
     const ids = subscriber.attributes.cached_tag_ids ?? [];
