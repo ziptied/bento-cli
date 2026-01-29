@@ -9,9 +9,16 @@
 
 import { Command } from "commander";
 import { password, input } from "@inquirer/prompts";
-import { config, ConfigError, type BentoProfile } from "../core/config";
+import { config, ConfigError } from "../core/config";
 import { validateCredentials, bento } from "../core/sdk";
 import { output } from "../core/output";
+
+interface LoginOptions {
+  profile: string;
+  publishableKey?: string;
+  secretKey?: string;
+  siteUuid?: string;
+}
 
 export function registerAuthCommands(program: Command): void {
   const auth = program
@@ -22,29 +29,37 @@ export function registerAuthCommands(program: Command): void {
     .command("login")
     .description("Authenticate with Bento API")
     .option("-p, --profile <name>", "Profile to store credentials in", "default")
-    .option("--api-key <key>", "API key (for non-interactive use)")
-    .option("--site-id <id>", "Site ID (for non-interactive use)")
-    .action(async (options: { profile: string; apiKey?: string; siteId?: string }) => {
+    .option("--publishable-key <key>", "Publishable key (for non-interactive use)")
+    .option("--secret-key <key>", "Secret key (for non-interactive use)")
+    .option("--site-uuid <uuid>", "Site UUID (for non-interactive use)")
+    .action(async (options: LoginOptions) => {
       try {
-        let apiKey = options.apiKey;
-        let siteId = options.siteId;
+        let publishableKey = options.publishableKey;
+        let secretKey = options.secretKey;
+        let siteUuid = options.siteUuid;
 
         // Check for explicitly empty values first (before interactive check)
-        if (apiKey !== undefined && !apiKey.trim()) {
-          output.error("API key cannot be empty.");
+        if (publishableKey !== undefined && !publishableKey.trim()) {
+          output.error("Publishable key cannot be empty.");
           process.exit(1);
         }
 
-        if (siteId !== undefined && !siteId.trim()) {
-          output.error("Site ID cannot be empty.");
+        if (secretKey !== undefined && !secretKey.trim()) {
+          output.error("Secret key cannot be empty.");
+          process.exit(1);
+        }
+
+        if (siteUuid !== undefined && !siteUuid.trim()) {
+          output.error("Site UUID cannot be empty.");
           process.exit(1);
         }
 
         // Interactive mode if credentials not provided via flags
-        if (!apiKey || !siteId) {
+        const needsInteractive = !publishableKey || !secretKey || !siteUuid;
+        if (needsInteractive) {
           if (!process.stdin.isTTY) {
             output.error(
-              "Non-interactive mode requires --api-key and --site-id flags."
+              "Non-interactive mode requires --publishable-key, --secret-key, and --site-uuid flags."
             );
             process.exit(1);
           }
@@ -53,31 +68,39 @@ export function registerAuthCommands(program: Command): void {
           output.log("Find your credentials at: https://app.bentonow.com/settings/api");
           output.newline();
 
-          if (!apiKey) {
-            apiKey = await password({
-              message: "Enter your Bento API key:",
+          if (!publishableKey) {
+            publishableKey = await password({
+              message: "Enter your Publishable Key:",
               mask: "*",
             });
           }
 
-          if (!siteId) {
-            siteId = await input({
-              message: "Enter your Bento Site ID:",
+          if (!secretKey) {
+            secretKey = await password({
+              message: "Enter your Secret Key:",
+              mask: "*",
+            });
+          }
+
+          if (!siteUuid) {
+            siteUuid = await input({
+              message: "Enter your Site UUID:",
             });
           }
         }
 
-        apiKey = apiKey!.trim();
-        siteId = siteId!.trim();
+        publishableKey = publishableKey!.trim();
+        secretKey = secretKey!.trim();
+        siteUuid = siteUuid!.trim();
 
         // Validate credentials against API
         output.startSpinner("Validating credentials...");
-        const isValid = await validateCredentials(apiKey, siteId);
+        const isValid = await validateCredentials(publishableKey, secretKey, siteUuid);
 
         if (!isValid) {
           output.failSpinner("Invalid credentials");
           output.error(
-            "Invalid credentials. Please check your API key and Site ID."
+            "Invalid credentials. Please check your Publishable Key, Secret Key, and Site UUID."
           );
           process.exit(1);
         }
@@ -85,7 +108,7 @@ export function registerAuthCommands(program: Command): void {
         output.stopSpinner("Credentials validated");
 
         // Save to config
-        await config.setProfile(options.profile, { apiKey, siteId });
+        await config.setProfile(options.profile, { publishableKey, secretKey, siteUuid });
         await config.useProfile(options.profile);
 
         // Reset the SDK client so it picks up the new credentials
@@ -97,7 +120,7 @@ export function registerAuthCommands(program: Command): void {
             error: null,
             data: {
               profile: options.profile,
-              siteId,
+              siteUuid,
             },
             meta: { count: 1 },
           });
@@ -183,7 +206,8 @@ export function registerAuthCommands(program: Command): void {
           return;
         }
 
-        const maskedApiKey = maskApiKey(currentProfile.apiKey);
+        const maskedPublishableKey = maskApiKey(currentProfile.publishableKey);
+        const maskedSecretKey = maskApiKey(currentProfile.secretKey);
 
         if (output.isJson()) {
           output.json({
@@ -192,8 +216,9 @@ export function registerAuthCommands(program: Command): void {
             data: {
               authenticated: true,
               profile: currentProfileName,
-              siteId: currentProfile.siteId,
-              apiKey: maskedApiKey,
+              siteUuid: currentProfile.siteUuid,
+              publishableKey: maskedPublishableKey,
+              secretKey: maskedSecretKey,
               createdAt: currentProfile.createdAt,
               updatedAt: currentProfile.updatedAt,
             },
@@ -202,10 +227,11 @@ export function registerAuthCommands(program: Command): void {
         } else {
           output.object({
             Profile: currentProfileName,
-            "Site ID": currentProfile.siteId,
-            "API Key": maskedApiKey,
-            "Created": formatDate(currentProfile.createdAt),
-            "Updated": formatDate(currentProfile.updatedAt),
+            "Site UUID": currentProfile.siteUuid,
+            "Publishable Key": maskedPublishableKey,
+            "Secret Key": maskedSecretKey,
+            Created: formatDate(currentProfile.createdAt),
+            Updated: formatDate(currentProfile.updatedAt),
           });
         }
       } catch (error) {
