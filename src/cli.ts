@@ -4,7 +4,9 @@ const program = new Command();
 
 program
   .name("bento")
-  .description("Bento CLI - Command-oriented and conversational interface for Bento email marketing")
+  .description(
+    "Bento CLI - Command-oriented and conversational interface for Bento email marketing"
+  )
   .version("0.1.0");
 
 // Commands will be registered here as they are implemented:
