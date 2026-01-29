@@ -3,6 +3,11 @@ import { Command } from "commander";
 import { output } from "./core/output";
 import { registerAuthCommands } from "./commands/auth";
 import { registerProfileCommands } from "./commands/profile";
+import { registerTagsCommands } from "./commands/tags";
+import { registerFieldsCommands } from "./commands/fields";
+import { registerEventsCommands } from "./commands/events";
+import { registerBroadcastsCommands } from "./commands/broadcasts";
+import { registerStatsCommands } from "./commands/stats";
 
 const program = new Command();
 
@@ -36,14 +41,14 @@ program
 // Register command groups
 registerAuthCommands(program);
 registerProfileCommands(program);
+registerTagsCommands(program);
+registerFieldsCommands(program);
+registerEventsCommands(program);
+registerBroadcastsCommands(program);
+registerStatsCommands(program);
 
 // Future commands to be implemented:
 // - subscribers (search, import, tag, suppress)
-// - tags (list, create, delete)
-// - fields (list, create)
-// - events (track)
-// - broadcasts (list, create)
-// - stats (site)
 // - mcp (status, start, stop)
 // - ask
 
