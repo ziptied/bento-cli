@@ -1,8 +1,10 @@
-import { describe, expect, it, beforeEach, afterEach, mock, spyOn } from "bun:test";
+import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { spawnSync } from "bun";
-import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { maskApiKey } from "../../commands/auth";
 
 /**
  * Helper to run CLI commands with a custom config path
@@ -34,6 +36,22 @@ function runCLI(
   };
 }
 
+describe("auth maskApiKey", () => {
+  it("returns all asterisks for short keys", () => {
+    expect(maskApiKey("abc")).toBe("***");
+    expect(maskApiKey("a")).toBe("*");
+    expect(maskApiKey("")).toBe("");
+  });
+
+  it("masks medium keys with first four characters", () => {
+    expect(maskApiKey("abcdefgh")).toBe("abcd****");
+  });
+
+  it("shows both ends for long keys", () => {
+    expect(maskApiKey("abcdefghijklmno")).toBe("abcdefgh...lmno");
+  });
+});
+
 describe("bento auth", () => {
   it("shows auth help with --help flag", () => {
     const result = runCLI(["auth", "--help"]);
@@ -47,8 +65,9 @@ describe("bento auth", () => {
     const result = runCLI(["auth", "login", "--help"]);
     expect(result.stdout).toContain("Authenticate with Bento API");
     expect(result.stdout).toContain("--profile");
-    expect(result.stdout).toContain("--api-key");
-    expect(result.stdout).toContain("--site-id");
+    expect(result.stdout).toContain("--publishable-key");
+    expect(result.stdout).toContain("--secret-key");
+    expect(result.stdout).toContain("--site-uuid");
   });
 
   it("shows logout help", () => {
@@ -97,8 +116,9 @@ describe("bento auth status", () => {
         current: "default",
         profiles: {
           default: {
-            apiKey: "test-api-key-12345678",
-            siteId: "test-site-id",
+            publishableKey: "pub-key-12345678",
+            secretKey: "secret-key-12345678",
+            siteUuid: "test-site-uuid",
             createdAt: now,
             updatedAt: now,
           },
@@ -108,10 +128,10 @@ describe("bento auth status", () => {
 
     const result = runCLI(["auth", "status"], { configPath });
     expect(result.stdout).toContain("default");
-    expect(result.stdout).toContain("test-site-id");
-    // API key should be masked
-    expect(result.stdout).toContain("test-api");
-    expect(result.stdout).not.toContain("test-api-key-12345678");
+    expect(result.stdout).toContain("test-site-uuid");
+    // Keys should be masked
+    expect(result.stdout).toContain("pub-key-");
+    expect(result.stdout).not.toContain("pub-key-12345678");
     expect(result.exitCode).toBe(0);
   });
 
@@ -137,8 +157,9 @@ describe("bento auth status", () => {
         current: "staging",
         profiles: {
           staging: {
-            apiKey: "staging-api-key-12345678",
-            siteId: "staging-site",
+            publishableKey: "staging-pub-key-12345678",
+            secretKey: "staging-secret-key-12345678",
+            siteUuid: "staging-site-uuid",
             createdAt: now,
             updatedAt: now,
           },
@@ -151,7 +172,7 @@ describe("bento auth status", () => {
     expect(json.success).toBe(true);
     expect(json.data.authenticated).toBe(true);
     expect(json.data.profile).toBe("staging");
-    expect(json.data.siteId).toBe("staging-site");
+    expect(json.data.siteUuid).toBe("staging-site-uuid");
     expect(result.exitCode).toBe(0);
   });
 });
@@ -190,8 +211,9 @@ describe("bento auth logout", () => {
         current: "default",
         profiles: {
           default: {
-            apiKey: "test-key",
-            siteId: "test-site",
+            publishableKey: "test-pub-key",
+            secretKey: "test-secret-key",
+            siteUuid: "test-site-uuid",
             createdAt: now,
             updatedAt: now,
           },
@@ -218,8 +240,9 @@ describe("bento auth logout", () => {
         current: "default",
         profiles: {
           default: {
-            apiKey: "test-key",
-            siteId: "test-site",
+            publishableKey: "test-pub-key",
+            secretKey: "test-secret-key",
+            siteUuid: "test-site-uuid",
             createdAt: now,
             updatedAt: now,
           },
@@ -237,21 +260,54 @@ describe("bento auth logout", () => {
 });
 
 describe("bento auth login", () => {
-  it("requires --api-key and --site-id in non-interactive mode", () => {
-    const result = runCLI(["auth", "login", "--api-key", "test"]);
+  it("requires all credentials in non-interactive mode", () => {
+    const result = runCLI(["auth", "login", "--publishable-key", "test"]);
     expect(result.stderr).toContain("Non-interactive mode requires");
     expect(result.exitCode).toBe(1);
   });
 
-  it("rejects empty API key", () => {
-    const result = runCLI(["auth", "login", "--api-key", "", "--site-id", "test"]);
-    expect(result.stderr).toContain("API key cannot be empty");
+  it("rejects empty publishable key", () => {
+    const result = runCLI([
+      "auth",
+      "login",
+      "--publishable-key",
+      "",
+      "--secret-key",
+      "test",
+      "--site-uuid",
+      "test",
+    ]);
+    expect(result.stderr).toContain("Publishable key cannot be empty");
     expect(result.exitCode).toBe(1);
   });
 
-  it("rejects empty Site ID", () => {
-    const result = runCLI(["auth", "login", "--api-key", "test", "--site-id", ""]);
-    expect(result.stderr).toContain("Site ID cannot be empty");
+  it("rejects empty secret key", () => {
+    const result = runCLI([
+      "auth",
+      "login",
+      "--publishable-key",
+      "test",
+      "--secret-key",
+      "",
+      "--site-uuid",
+      "test",
+    ]);
+    expect(result.stderr).toContain("Secret key cannot be empty");
+    expect(result.exitCode).toBe(1);
+  });
+
+  it("rejects empty site UUID", () => {
+    const result = runCLI([
+      "auth",
+      "login",
+      "--publishable-key",
+      "test",
+      "--secret-key",
+      "test",
+      "--site-uuid",
+      "",
+    ]);
+    expect(result.stderr).toContain("Site UUID cannot be empty");
     expect(result.exitCode).toBe(1);
   });
 
