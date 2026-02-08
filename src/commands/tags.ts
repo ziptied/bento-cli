@@ -11,6 +11,7 @@ import { Command } from "commander";
 import { bento, CLIError } from "../core/sdk";
 import { output } from "../core/output";
 import { safety } from "../core/safety";
+import { filterBySearch } from "../utils/search";
 
 export function registerTagsCommands(program: Command): void {
   const tags = program.command("tags").description("Manage tags");
@@ -18,7 +19,8 @@ export function registerTagsCommands(program: Command): void {
   tags
     .command("list")
     .description("List all tags")
-    .action(async () => {
+    .argument("[search]", "Filter tags by name")
+    .action(async (search?: string) => {
       output.startSpinner("Fetching tags...");
 
       try {
@@ -39,8 +41,24 @@ export function registerTagsCommands(program: Command): void {
           return;
         }
 
+        const filtered = filterBySearch(result, search, (tag) => tag.attributes.name);
+
+        if (filtered.length === 0) {
+          if (output.isJson()) {
+            output.json({
+              success: true,
+              error: null,
+              data: [],
+              meta: { count: 0, total: result.length },
+            });
+          } else {
+            output.info(`No tags found matching "${search}"`);
+          }
+          return;
+        }
+
         output.table(
-          result.map((tag) => ({
+          filtered.map((tag) => ({
             name: tag.attributes.name,
             id: tag.id,
             createdAt: formatDate(tag.attributes.createdAt),
@@ -54,6 +72,10 @@ export function registerTagsCommands(program: Command): void {
             emptyMessage: "No tags found.",
           }
         );
+
+        if (search && filtered.length < result.length) {
+          output.info(`Showing ${filtered.length} of ${result.length} tags`);
+        }
       } catch (error) {
         output.failSpinner();
         handleError(error);

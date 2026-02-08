@@ -73,12 +73,15 @@ export function registerEventsCommands(program: Command): void {
           }
         }
       } catch (error) {
+        output.failSpinner();
         if (error instanceof CLIError) {
-          output.failSpinner();
           output.error(error.message);
-          process.exit(1);
+        } else if (error instanceof Error) {
+          output.error(error.message);
+        } else {
+          output.error("An unexpected error occurred.");
         }
-        throw error;
+        process.exit(1);
       }
     });
 }

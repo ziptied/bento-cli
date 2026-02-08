@@ -131,11 +131,15 @@ export function registerProfileCommands(program: Command): void {
           output.info(`Switch to it with: bento profile use ${name}`);
         }
       } catch (error) {
+        output.failSpinner();
         if (error instanceof ConfigError) {
-          output.error(`${error.message}`);
-          process.exit(1);
+          output.error(error.message);
+        } else if (error instanceof Error) {
+          output.error(error.message);
+        } else {
+          output.error("An unexpected error occurred.");
         }
-        throw error;
+        process.exit(1);
       }
     });
 
@@ -195,10 +199,13 @@ export function registerProfileCommands(program: Command): void {
         }
       } catch (error) {
         if (error instanceof ConfigError) {
-          output.error(`${error.message}`);
-          process.exit(1);
+          output.error(error.message);
+        } else if (error instanceof Error) {
+          output.error(error.message);
+        } else {
+          output.error("An unexpected error occurred.");
         }
-        throw error;
+        process.exit(1);
       }
     });
 
@@ -225,10 +232,13 @@ export function registerProfileCommands(program: Command): void {
         }
       } catch (error) {
         if (error instanceof ConfigError) {
-          output.error(`${error.message}`);
-          process.exit(1);
+          output.error(error.message);
+        } else if (error instanceof Error) {
+          output.error(error.message);
+        } else {
+          output.error("An unexpected error occurred.");
         }
-        throw error;
+        process.exit(1);
       }
     });
 
@@ -293,10 +303,13 @@ export function registerProfileCommands(program: Command): void {
         }
       } catch (error) {
         if (error instanceof ConfigError) {
-          output.error(`${error.message}`);
-          process.exit(1);
+          output.error(error.message);
+        } else if (error instanceof Error) {
+          output.error(error.message);
+        } else {
+          output.error("An unexpected error occurred.");
         }
-        throw error;
+        process.exit(1);
       }
     });
 }

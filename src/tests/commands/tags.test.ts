@@ -45,6 +45,7 @@ describe("bento tags", () => {
   it("shows list help", () => {
     const result = runCLI(["tags", "list", "--help"]);
     expect(result.stdout).toContain("List all tags");
+    expect(result.stdout).toContain("[search]");
   });
 
   it("shows create help", () => {

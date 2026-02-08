@@ -112,7 +112,44 @@ export class BentoClient {
       // Make a lightweight API call to validate credentials
       await tempSdk.V1.Stats.getSiteStats();
       return true;
-    } catch {
+    } catch (error) {
+      // Auth failures → credentials are invalid, return false
+      if (error instanceof NotAuthorizedError) {
+        return false;
+      }
+
+      if (error instanceof Error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes("401") || msg.includes("unauthorized") || msg.includes("403") || msg.includes("forbidden")) {
+          return false;
+        }
+
+        // Server errors, timeouts, network failures → rethrow so caller can inform the user
+        if (msg.includes("500") || msg.includes("timeout") || msg.includes("econnrefused") || msg.includes("enotfound") || msg.includes("fetch failed")) {
+          throw new CLIError(
+            "Could not reach the Bento API to validate credentials. The service may be temporarily unavailable — please try again.",
+            "API_ERROR"
+          );
+        }
+      }
+
+      if (error instanceof RateLimitedError) {
+        throw new CLIError(
+          "Rate limited while validating credentials. Please wait a moment and try again.",
+          "RATE_LIMITED",
+          429
+        );
+      }
+
+      if (error instanceof RequestTimeoutError) {
+        throw new CLIError(
+          "Request timed out while validating credentials. Please try again.",
+          "TIMEOUT",
+          408
+        );
+      }
+
+      // Unknown errors — assume bad credentials
       return false;
     }
   }
@@ -161,70 +198,19 @@ export class BentoClient {
   }
 
   async searchSubscribers(params: SubscriberSearchParams): Promise<SubscriberSearchResult> {
-    if (!params.email && !params.uuid && !params.tag && !params.fields?.length) {
+    if (!params.email && !params.uuid) {
       throw new CLIError(
-        "Provide --email, --uuid, --tag, or --field to search subscribers.",
+        "Provide --email or --uuid to look up a subscriber.",
         "VALIDATION_ERROR"
       );
     }
 
-    const page = params.page ?? 1;
-    const perPage = params.perPage ?? 25;
+    const subscriber = await this.getSubscriber({
+      email: params.email,
+      uuid: params.uuid,
+    });
 
-    // Optimize: direct lookup when only email/uuid is provided
-    if ((params.email || params.uuid) && !params.tag && !params.fields?.length) {
-      const subscriber = await this.getSubscriber({
-        email: params.email,
-        uuid: params.uuid,
-      });
-      const list = subscriber ? [subscriber] : [];
-      return {
-        subscribers: list,
-        meta: {
-          page: 1,
-          perPage: list.length,
-          count: list.length,
-          total: list.length,
-          hasMore: false,
-        },
-      };
-    }
-
-    const query: Record<string, string | number> = {
-      page,
-      per_page: perPage,
-    };
-
-    if (params.email) query.email = params.email;
-    if (params.uuid) query.uuid = params.uuid;
-    if (params.tag) query.tag = params.tag;
-    if (params.fields) {
-      for (const filter of params.fields) {
-        if (!filter.key || !filter.value) continue;
-        const key = `fields[${filter.key}]`;
-        query[key] = filter.value;
-      }
-    }
-
-    const response = await this.apiGet<{
-      data?: Subscriber<Record<string, unknown>>[];
-      meta?: { total?: number; count?: number };
-    }>("/fetch/subscribers/search", query);
-
-    const subscribers = response.data ?? [];
-    const total = response.meta?.total ?? subscribers.length;
-    const count = response.meta?.count ?? subscribers.length;
-
-    return {
-      subscribers,
-      meta: {
-        page,
-        perPage,
-        total,
-        count,
-        hasMore: total ? page * perPage < total : undefined,
-      },
-    };
+    return { subscriber };
   }
 
   /**
@@ -459,7 +445,32 @@ export class BentoClient {
   // ============================================================
 
   /**
-   * List all broadcasts
+   * Fetch a single page of broadcasts
+   */
+  async getBroadcastsPage(
+    page = 1,
+    perPage = 25
+  ): Promise<{ broadcasts: Broadcast[]; total?: number; hasMore: boolean }> {
+    type BroadcastListResponse = {
+      data?: Broadcast[];
+      meta?: { total?: number; count?: number; page?: number; per_page?: number };
+    };
+
+    const response = await this.apiGet<BroadcastListResponse | Broadcast[]>(
+      "/fetch/broadcasts",
+      { page, per_page: perPage }
+    );
+
+    const data = Array.isArray(response) ? response : response.data ?? [];
+    const meta = Array.isArray(response) ? undefined : response.meta;
+    const total = meta?.total;
+    const hasMore = total !== undefined ? page * perPage < total : data.length === perPage;
+
+    return { broadcasts: data, total, hasMore };
+  }
+
+  /**
+   * List all broadcasts (auto-paginates)
    */
   async getBroadcasts(): Promise<Broadcast[]> {
     const perPage = 100;
@@ -697,9 +708,16 @@ export class BentoClient {
           status
         );
       default:
+        if (status >= 500) {
+          return new CLIError(
+            "The Bento API returned a server error. This is usually temporary — please try again in a few moments.",
+            "API_ERROR",
+            status
+          );
+        }
         return new CLIError(
           `Request failed (${status}): ${message}`,
-          status >= 500 ? "API_ERROR" : "UNKNOWN",
+          "UNKNOWN",
           status
         );
     }

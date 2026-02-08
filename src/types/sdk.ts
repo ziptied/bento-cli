@@ -72,21 +72,10 @@ export interface FieldFilter {
 export interface SubscriberSearchParams extends GetSubscriberParams {
   tag?: string;
   fields?: FieldFilter[];
-  page?: number;
-  perPage?: number;
-}
-
-export interface SubscriberSearchMeta {
-  page: number;
-  perPage: number;
-  total?: number;
-  count: number;
-  hasMore?: boolean;
 }
 
 export interface SubscriberSearchResult {
-  subscribers: Subscriber<Record<string, unknown>>[];
-  meta: SubscriberSearchMeta;
+  subscriber: Subscriber<Record<string, unknown>> | null;
 }
 
 /**

@@ -44,6 +44,7 @@ describe("bento fields", () => {
   it("shows list help", () => {
     const result = runCLI(["fields", "list", "--help"]);
     expect(result.stdout).toContain("List all custom fields");
+    expect(result.stdout).toContain("[search]");
   });
 
   it("shows create help", () => {

@@ -9,6 +9,7 @@
 import { Command } from "commander";
 import { bento, CLIError } from "../core/sdk";
 import { output } from "../core/output";
+import { filterBySearch } from "../utils/search";
 
 export function registerFieldsCommands(program: Command): void {
   const fields = program.command("fields").description("Manage custom fields");
@@ -16,7 +17,8 @@ export function registerFieldsCommands(program: Command): void {
   fields
     .command("list")
     .description("List all custom fields")
-    .action(async () => {
+    .argument("[search]", "Filter fields by key or name")
+    .action(async (search?: string) => {
       output.startSpinner("Fetching fields...");
 
       try {
@@ -39,8 +41,27 @@ export function registerFieldsCommands(program: Command): void {
           return;
         }
 
+        const filtered = filterBySearch(result, search, (field) => [
+          field.attributes.key,
+          field.attributes.name ?? "",
+        ]);
+
+        if (filtered.length === 0) {
+          if (output.isJson()) {
+            output.json({
+              success: true,
+              error: null,
+              data: [],
+              meta: { count: 0, total: result.length },
+            });
+          } else {
+            output.info(`No fields found matching "${search}"`);
+          }
+          return;
+        }
+
         output.table(
-          result.map((field) => ({
+          filtered.map((field) => ({
             key: field.attributes.key,
             name: field.attributes.name ?? field.attributes.key,
             id: field.id,
@@ -56,6 +77,10 @@ export function registerFieldsCommands(program: Command): void {
             emptyMessage: "No custom fields found.",
           }
         );
+
+        if (search && filtered.length < result.length) {
+          output.info(`Showing ${filtered.length} of ${result.length} fields`);
+        }
       } catch (error) {
         output.failSpinner();
         handleError(error);

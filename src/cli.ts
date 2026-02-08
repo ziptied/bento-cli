@@ -56,7 +56,20 @@ registerStatsCommands(program);
 // - mcp (status, start, stop)
 // - ask
 
-program.parse();
+program.parseAsync().catch((error) => {
+  // Commander's exitOverride throws here — let it pass
+  if (error?.code === "commander.helpDisplayed" || error?.code === "commander.version") {
+    return;
+  }
+
+  // Friendly fallback for any uncaught error
+  if (error instanceof Error) {
+    output.error(error.message);
+  } else {
+    output.error("An unexpected error occurred.");
+  }
+  process.exit(1);
+});
 
 function configureOutputMode(options: { json?: boolean; quiet?: boolean }): void {
   if (options.json && options.quiet) {

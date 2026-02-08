@@ -43,7 +43,9 @@ describe("bento broadcasts", () => {
 
   it("shows list help", () => {
     const result = runCLI(["broadcasts", "list", "--help"]);
-    expect(result.stdout).toContain("List all broadcasts");
+    expect(result.stdout).toContain("List broadcasts");
+    expect(result.stdout).toContain("--page");
+    expect(result.stdout).toContain("--per-page");
   });
 
   it("shows create help", () => {
