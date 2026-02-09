@@ -5,8 +5,6 @@ import { bento } from "../../core/sdk";
 import type {
   FieldFilter,
   Subscriber,
-  SubscriberSearchMeta,
-  SubscriberSearchParams,
 } from "../../types/sdk";
 import { handleSubscriberError, lookupTagNames, requireAtLeastOneFilter } from "./helpers";
 
@@ -14,8 +12,6 @@ interface SearchCommandOptions {
   email?: string;
   tag?: string;
   field?: string[];
-  page?: string;
-  perPage?: string;
   uuid?: string;
 }
 
@@ -33,46 +29,67 @@ interface SubscriberRow {
 export function registerSearchCommand(subscribers: Command): void {
   subscribers
     .command("search")
-    .description("Search for subscribers by email, tag, or custom field")
-    .option("-e, --email <email>", "Filter by email (exact match)")
-    .option("-t, --tag <tag>", "Filter by tag name")
+    .description("Look up a subscriber by email or UUID, optionally filtering by tag or field")
+    .option("-e, --email <email>", "Look up subscriber by email")
+    .option("-t, --tag <tag>", "Filter: only show if subscriber has this tag")
     .option(
       "-f, --field <key=value>",
-      "Filter by custom field (repeat flag for multiple fields)",
+      "Filter: only show if subscriber field matches (repeatable)",
       collectFieldOptions,
       []
     )
-    .option("--uuid <uuid>", "Lookup a subscriber by UUID")
-    .option("--page <n>", "Page number (default: 1)", "1")
-    .option("--per-page <n>", "Results per page (default: 25)", "25")
+    .option("--uuid <uuid>", "Look up subscriber by UUID")
     .action(async (options: SearchCommandOptions) => {
-      const page = parsePositiveInteger(options.page ?? "1", "--page");
-      const perPage = parsePositiveInteger(options.perPage ?? "25", "--per-page");
       const fieldFilters = parseFieldFilters(options.field ?? []);
       const email = options.email?.trim() || undefined;
       const uuid = options.uuid?.trim() || undefined;
       const tag = options.tag?.trim() || undefined;
 
       requireAtLeastOneFilter(
-        Boolean(email || uuid || tag || fieldFilters.length > 0),
-        "Provide --email, --uuid, --tag, or --field to search."
+        Boolean(email || uuid),
+        "Provide --email or --uuid to look up a subscriber."
       );
 
-      const params: SubscriberSearchParams = {
-        email,
-        uuid,
-        tag,
-        fields: fieldFilters.length ? fieldFilters : undefined,
-        page,
-        perPage,
-      };
-
-      output.startSpinner("Searching subscribers...");
+      output.startSpinner("Looking up subscriber...");
 
       try {
-        const result = await bento.searchSubscribers(params);
+        const result = await bento.searchSubscribers({ email, uuid });
+        const subscriber = result.subscriber;
+
+        if (!subscriber) {
+          output.stopSpinner();
+          renderEmpty();
+          return;
+        }
+
+        // Client-side tag filtering
+        if (tag) {
+          const tagIds = new Set(subscriber.attributes.cached_tag_ids ?? []);
+          const tagLookup = await lookupTagNames(tagIds);
+          const tagNames = [...tagLookup.values()].map((n) => n.toLowerCase());
+          if (!tagNames.includes(tag.toLowerCase())) {
+            output.stopSpinner();
+            renderEmpty(`No subscribers found matching tag "${tag}".`);
+            return;
+          }
+        }
+
+        // Client-side field filtering
+        if (fieldFilters.length > 0) {
+          const fields = subscriber.attributes.fields ?? {};
+          const allMatch = fieldFilters.every((filter) => {
+            const actual = fields[filter.key];
+            return actual !== undefined && String(actual) === filter.value;
+          });
+          if (!allMatch) {
+            output.stopSpinner();
+            renderEmpty("No subscribers found matching field filters.");
+            return;
+          }
+        }
+
         output.stopSpinner();
-        await renderResults(result.subscribers, result.meta);
+        await renderResults([subscriber]);
       } catch (error) {
         output.failSpinner();
         handleSubscriberError(error);
@@ -82,15 +99,6 @@ export function registerSearchCommand(subscribers: Command): void {
 
 function collectFieldOptions(value: string, previous: string[]): string[] {
   return [...previous, value];
-}
-
-function parsePositiveInteger(value: string, flag: string): number {
-  const numeric = Number.parseInt(value, 10);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    output.error(`${flag} must be a positive integer.`);
-    process.exit(2);
-  }
-  return numeric;
 }
 
 function parseFieldFilters(values: string[]): FieldFilter[] {
@@ -108,9 +116,31 @@ function parseFieldFilters(values: string[]): FieldFilter[] {
   });
 }
 
+function renderEmpty(message = "No subscribers found."): void {
+  if (output.isJson()) {
+    output.json({
+      success: true,
+      error: null,
+      data: [],
+      meta: { count: 0 },
+    });
+    return;
+  }
+
+  output.table([], {
+    columns: [
+      { key: "email", header: "EMAIL", width: 25 },
+      { key: "name", header: "NAME", width: 15 },
+      { key: "status", header: "STATUS", width: 12 },
+      { key: "tags", header: "TAGS", width: 30 },
+      { key: "fields", header: "FIELDS", width: 25 },
+    ],
+    emptyMessage: message,
+  });
+}
+
 async function renderResults(
-  subscribers: Subscriber<Record<string, unknown>>[],
-  meta: SubscriberSearchMeta
+  subscribers: Subscriber<Record<string, unknown>>[]
 ): Promise<void> {
   const tagIds = new Set<string>();
   for (const subscriber of subscribers) {
@@ -137,13 +167,7 @@ async function renderResults(
         tags: row.tags,
         fields: row.fields,
       })),
-      meta: {
-        count: rows.length,
-        total: meta.total ?? rows.length,
-        page: meta.page,
-        pageSize: meta.perPage,
-        hasMore: meta.hasMore ?? false,
-      },
+      meta: { count: rows.length },
     });
     return;
   }
@@ -165,15 +189,8 @@ async function renderResults(
         { key: "fields", header: "FIELDS", width: 25 },
       ],
       emptyMessage: "No subscribers found.",
-      meta: { total: meta.total },
     }
   );
-
-  if (!output.isQuiet()) {
-    const totalText = typeof meta.total === "number" ? ` of ${meta.total}` : "";
-    const moreText = meta.hasMore ? " (more available)" : "";
-    output.info(`Page ${meta.page}, showing ${rows.length}${totalText}${moreText}`);
-  }
 }
 
 function buildRow(

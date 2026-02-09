@@ -9,7 +9,12 @@
 import { Command } from "commander";
 import { bento, CLIError } from "../core/sdk";
 import { output } from "../core/output";
-import type { BroadcastType, CreateBroadcastInput } from "../types/sdk";
+import type { Broadcast, BroadcastType, CreateBroadcastInput } from "../types/sdk";
+
+interface ListOptions {
+  page?: string;
+  perPage?: string;
+}
 
 interface CreateOptions {
   name: string;
@@ -30,63 +35,157 @@ export function registerBroadcastsCommands(program: Command): void {
 
   broadcasts
     .command("list")
-    .description("List all broadcasts")
-    .action(async () => {
+    .description("List broadcasts")
+    .option("--page <n>", "Page number (paginate instead of fetching all)")
+    .option("--per-page <n>", "Results per page (default: 25, implies pagination)")
+    .action(async (options: ListOptions) => {
       try {
-        output.startSpinner("Fetching broadcasts...");
+        const hasCustomPerPage = options.perPage !== undefined;
+        const paginated = !hasCustomPerPage && options.page !== undefined;
 
-        const broadcastList = await bento.getBroadcasts();
-        output.stopSpinner();
+        if (hasCustomPerPage) {
+          const page = parsePositiveInteger(options.page ?? "1", "--page");
+          const perPage = parsePositiveInteger(options.perPage ?? "25", "--per-page");
+          const offset = (page - 1) * perPage;
 
-        if (broadcastList.length === 0) {
+          output.startSpinner("Fetching broadcasts...");
+          const broadcastList = await bento.getBroadcasts();
+          output.stopSpinner();
+
+          if (broadcastList.length === 0) {
+            if (output.isJson()) {
+              output.json({
+                success: true,
+                error: null,
+                data: [],
+                meta: { count: 0, page, pageSize: perPage, total: 0, hasMore: false },
+              });
+            } else {
+              output.info("No broadcasts found.");
+            }
+            return;
+          }
+
+          const rows = broadcastsToRows(broadcastList);
+          const total = rows.length;
+          const pageRows = rows.slice(offset, offset + perPage);
+          const hasMore = offset + pageRows.length < total;
+
+          if (pageRows.length === 0) {
+            if (output.isJson()) {
+              output.json({
+                success: true,
+                error: null,
+                data: [],
+                meta: { count: 0, page, pageSize: perPage, total, hasMore: false },
+              });
+            } else {
+              output.info(`No broadcasts found for page ${page}.`);
+            }
+            return;
+          }
+
           if (output.isJson()) {
             output.json({
               success: true,
               error: null,
-              data: [],
-              meta: { count: 0 },
+              data: pageRows,
+              meta: { count: pageRows.length, total, page, pageSize: perPage, hasMore },
             });
-          } else {
-            output.info("No broadcasts found.");
+            return;
+          }
+
+          output.table(pageRows, { columns: broadcastColumns(), meta: { total } });
+          if (!output.isQuiet()) {
+            const totalText = ` of ${total}`;
+            const moreText = hasMore ? " (more available)" : "";
+            output.info(`Page ${page}, showing ${pageRows.length}${totalText}${moreText}`);
           }
           return;
         }
 
-        output.table(
-          broadcastList.map((b) => {
-            // Handle both SDK type structure and actual API response
-            const attrs = b.attributes as Record<string, unknown>;
-            const template = attrs.template as { subject?: string } | undefined;
-            const stats = attrs.stats as { recipients?: number; total_opens?: number; total_clicks?: number } | undefined;
+        if (paginated) {
+          const page = parsePositiveInteger(options.page ?? "1", "--page");
+          const perPage = parsePositiveInteger(options.perPage ?? "25", "--per-page");
 
-            return {
-              name: attrs.name as string,
-              subject: template?.subject ?? (attrs.subject as string) ?? "-",
-              recipients: stats?.recipients?.toLocaleString() ?? "-",
-              opens: stats?.total_opens?.toLocaleString() ?? "-",
-              clicks: stats?.total_clicks?.toLocaleString() ?? "-",
-              created: formatDate(attrs.created_at as string),
-            };
-          }),
-          {
-            columns: [
-              { key: "name", header: "NAME" },
-              { key: "subject", header: "SUBJECT" },
-              { key: "recipients", header: "SENT" },
-              { key: "opens", header: "OPENS" },
-              { key: "clicks", header: "CLICKS" },
-              { key: "created", header: "CREATED" },
-            ],
-            meta: { total: broadcastList.length },
+          output.startSpinner("Fetching broadcasts...");
+          const result = await bento.getBroadcastsPage(page, perPage);
+          output.stopSpinner();
+
+          if (result.broadcasts.length === 0) {
+            if (output.isJson()) {
+              output.json({
+                success: true,
+                error: null,
+                data: [],
+                meta: { count: 0, page, pageSize: perPage, total: result.total ?? 0, hasMore: false },
+              });
+            } else {
+              output.info("No broadcasts found.");
+            }
+            return;
           }
-        );
-      } catch (error) {
-        if (error instanceof CLIError) {
-          output.failSpinner();
-          output.error(error.message);
-          process.exit(1);
+
+          if (output.isJson()) {
+            output.json({
+              success: true,
+              error: null,
+              data: broadcastsToRows(result.broadcasts),
+              meta: {
+                count: result.broadcasts.length,
+                total: result.total,
+                page,
+                pageSize: perPage,
+                hasMore: result.hasMore,
+              },
+            });
+          } else {
+            output.table(broadcastsToRows(result.broadcasts), {
+              columns: broadcastColumns(),
+              meta: { total: result.total },
+            });
+
+            if (!output.isQuiet()) {
+              const totalText = typeof result.total === "number" ? ` of ${result.total}` : "";
+              const moreText = result.hasMore ? " (more available)" : "";
+              output.info(`Page ${page}, showing ${result.broadcasts.length}${totalText}${moreText}`);
+            }
+          }
+        } else {
+          // Default: fetch all broadcasts (original behavior)
+          output.startSpinner("Fetching broadcasts...");
+          const broadcastList = await bento.getBroadcasts();
+          output.stopSpinner();
+
+          if (broadcastList.length === 0) {
+            if (output.isJson()) {
+              output.json({
+                success: true,
+                error: null,
+                data: [],
+                meta: { count: 0 },
+              });
+            } else {
+              output.info("No broadcasts found.");
+            }
+            return;
+          }
+
+          output.table(broadcastsToRows(broadcastList), {
+            columns: broadcastColumns(),
+            meta: { total: broadcastList.length },
+          });
         }
-        throw error;
+      } catch (error) {
+        output.failSpinner();
+        if (error instanceof CLIError) {
+          output.error(error.message);
+        } else if (error instanceof Error) {
+          output.error(error.message);
+        } else {
+          output.error("An unexpected error occurred.");
+        }
+        process.exit(1);
       }
     });
 
@@ -157,14 +256,54 @@ export function registerBroadcastsCommands(program: Command): void {
           output.info("Edit and send this broadcast from the Bento web dashboard.");
         }
       } catch (error) {
+        output.failSpinner();
         if (error instanceof CLIError) {
-          output.failSpinner();
           output.error(error.message);
-          process.exit(1);
+        } else if (error instanceof Error) {
+          output.error(error.message);
+        } else {
+          output.error("An unexpected error occurred.");
         }
-        throw error;
+        process.exit(1);
       }
     });
+}
+
+function broadcastsToRows(broadcasts: Broadcast[]) {
+  return broadcasts.map((b) => {
+    const attrs = b.attributes as Record<string, unknown>;
+    const template = attrs.template as { subject?: string } | undefined;
+    const stats = attrs.stats as { recipients?: number; total_opens?: number; total_clicks?: number } | undefined;
+
+    return {
+      name: attrs.name as string,
+      subject: template?.subject ?? (attrs.subject as string) ?? "-",
+      recipients: stats?.recipients?.toLocaleString() ?? "-",
+      opens: stats?.total_opens?.toLocaleString() ?? "-",
+      clicks: stats?.total_clicks?.toLocaleString() ?? "-",
+      created: formatDate(attrs.created_at as string),
+    };
+  });
+}
+
+function broadcastColumns() {
+  return [
+    { key: "name" as const, header: "NAME" },
+    { key: "subject" as const, header: "SUBJECT" },
+    { key: "recipients" as const, header: "SENT" },
+    { key: "opens" as const, header: "OPENS" },
+    { key: "clicks" as const, header: "CLICKS" },
+    { key: "created" as const, header: "CREATED" },
+  ];
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const numeric = Number.parseInt(value, 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    output.error(`${flag} must be a positive integer.`);
+    process.exit(2);
+  }
+  return numeric;
 }
 
 /**
