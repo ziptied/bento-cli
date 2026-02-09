@@ -8,6 +8,7 @@
 import { Command } from "commander";
 import { bento, CLIError } from "../core/sdk";
 import { output } from "../core/output";
+import type { SiteStats } from "../types/sdk";
 
 export function registerStatsCommands(program: Command): void {
   const stats = program
@@ -23,6 +24,14 @@ export function registerStatsCommands(program: Command): void {
 
         const siteStats = await bento.getSiteStats();
         output.stopSpinner();
+
+        const stats = siteStats as ExtendedSiteStats;
+        const totalSubscribers = pickMetric(stats, ["total_subscribers", "user_count", "subscriber_count"]);
+        const activeSubscribers = pickMetric(stats, ["active_subscribers", "subscriber_count", "user_count"]);
+        const unsubscribed = pickMetric(stats, ["unsubscribed_count", "unsubscriber_count"]);
+        const totalBroadcasts = pickMetric(stats, ["broadcast_count", "total_broadcasts", "broadcasts_count"]);
+        const averageOpenRate = pickMetric(stats, ["average_open_rate", "open_rate"]);
+        const averageClickRate = pickMetric(stats, ["average_click_rate", "click_rate"]);
 
         if (output.isJson()) {
           output.json({
@@ -45,18 +54,18 @@ export function registerStatsCommands(program: Command): void {
 
         // Subscriber metrics
         output.object({
-          "Total Subscribers": formatNumber(siteStats.total_subscribers),
-          "Active Subscribers": formatNumber(siteStats.active_subscribers),
-          "Unsubscribed": formatNumber(siteStats.unsubscribed_count),
+          "Total Subscribers": formatNumber(totalSubscribers),
+          "Active Subscribers": formatNumber(activeSubscribers),
+          "Unsubscribed": formatNumber(unsubscribed),
         });
 
         output.newline();
 
         // Broadcast metrics
         output.object({
-          "Total Broadcasts": formatNumber(siteStats.broadcast_count),
-          "Avg. Open Rate": formatPercent(siteStats.average_open_rate),
-          "Avg. Click Rate": formatPercent(siteStats.average_click_rate),
+          "Total Broadcasts": formatNumber(totalBroadcasts),
+          "Avg. Open Rate": formatPercent(averageOpenRate),
+          "Avg. Click Rate": formatPercent(averageClickRate),
         });
 
         output.divider();
@@ -95,4 +104,27 @@ function formatPercent(value: number | undefined | null): string {
   // If it's a decimal (0-1), multiply by 100
   const percent = value > 1 ? value : value * 100;
   return `${percent.toFixed(1)}%`;
+}
+
+type LegacySiteStats = {
+  user_count?: number;
+  subscriber_count?: number;
+  unsubscriber_count?: number;
+  total_broadcasts?: number;
+  broadcasts_count?: number;
+  open_rate?: number;
+  click_rate?: number;
+};
+
+type ExtendedSiteStats = Partial<SiteStats> & LegacySiteStats;
+type MetricKey = keyof ExtendedSiteStats;
+
+function pickMetric(stats: ExtendedSiteStats, keys: MetricKey[]): number | undefined {
+  for (const key of keys) {
+    const value = stats[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
 }

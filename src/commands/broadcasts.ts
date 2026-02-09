@@ -40,7 +40,69 @@ export function registerBroadcastsCommands(program: Command): void {
     .option("--per-page <n>", "Results per page (default: 25, implies pagination)")
     .action(async (options: ListOptions) => {
       try {
-        const paginated = options.page !== undefined || options.perPage !== undefined;
+        const hasCustomPerPage = options.perPage !== undefined;
+        const paginated = !hasCustomPerPage && options.page !== undefined;
+
+        if (hasCustomPerPage) {
+          const page = parsePositiveInteger(options.page ?? "1", "--page");
+          const perPage = parsePositiveInteger(options.perPage ?? "25", "--per-page");
+          const offset = (page - 1) * perPage;
+
+          output.startSpinner("Fetching broadcasts...");
+          const broadcastList = await bento.getBroadcasts();
+          output.stopSpinner();
+
+          if (broadcastList.length === 0) {
+            if (output.isJson()) {
+              output.json({
+                success: true,
+                error: null,
+                data: [],
+                meta: { count: 0, page, pageSize: perPage, total: 0, hasMore: false },
+              });
+            } else {
+              output.info("No broadcasts found.");
+            }
+            return;
+          }
+
+          const rows = broadcastsToRows(broadcastList);
+          const total = rows.length;
+          const pageRows = rows.slice(offset, offset + perPage);
+          const hasMore = offset + pageRows.length < total;
+
+          if (pageRows.length === 0) {
+            if (output.isJson()) {
+              output.json({
+                success: true,
+                error: null,
+                data: [],
+                meta: { count: 0, page, pageSize: perPage, total, hasMore: false },
+              });
+            } else {
+              output.info(`No broadcasts found for page ${page}.`);
+            }
+            return;
+          }
+
+          if (output.isJson()) {
+            output.json({
+              success: true,
+              error: null,
+              data: pageRows,
+              meta: { count: pageRows.length, total, page, pageSize: perPage, hasMore },
+            });
+            return;
+          }
+
+          output.table(pageRows, { columns: broadcastColumns(), meta: { total } });
+          if (!output.isQuiet()) {
+            const totalText = ` of ${total}`;
+            const moreText = hasMore ? " (more available)" : "";
+            output.info(`Page ${page}, showing ${pageRows.length}${totalText}${moreText}`);
+          }
+          return;
+        }
 
         if (paginated) {
           const page = parsePositiveInteger(options.page ?? "1", "--page");
@@ -64,15 +126,13 @@ export function registerBroadcastsCommands(program: Command): void {
             return;
           }
 
-          const rows = broadcastsToRows(result.broadcasts);
-
           if (output.isJson()) {
             output.json({
               success: true,
               error: null,
-              data: rows,
+              data: broadcastsToRows(result.broadcasts),
               meta: {
-                count: rows.length,
+                count: result.broadcasts.length,
                 total: result.total,
                 page,
                 pageSize: perPage,
@@ -80,7 +140,7 @@ export function registerBroadcastsCommands(program: Command): void {
               },
             });
           } else {
-            output.table(rows, {
+            output.table(broadcastsToRows(result.broadcasts), {
               columns: broadcastColumns(),
               meta: { total: result.total },
             });
@@ -88,7 +148,7 @@ export function registerBroadcastsCommands(program: Command): void {
             if (!output.isQuiet()) {
               const totalText = typeof result.total === "number" ? ` of ${result.total}` : "";
               const moreText = result.hasMore ? " (more available)" : "";
-              output.info(`Page ${page}, showing ${rows.length}${totalText}${moreText}`);
+              output.info(`Page ${page}, showing ${result.broadcasts.length}${totalText}${moreText}`);
             }
           }
         } else {

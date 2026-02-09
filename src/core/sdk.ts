@@ -464,9 +464,10 @@ export class BentoClient {
     const data = Array.isArray(response) ? response : response.data ?? [];
     const meta = Array.isArray(response) ? undefined : response.meta;
     const total = meta?.total;
-    const hasMore = total !== undefined ? page * perPage < total : data.length === perPage;
+    const limited = data.slice(0, perPage);
+    const hasMore = total !== undefined ? page * perPage < total : data.length >= perPage;
 
-    return { broadcasts: data, total, hasMore };
+    return { broadcasts: limited, total, hasMore };
   }
 
   /**

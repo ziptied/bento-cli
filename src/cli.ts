@@ -3,6 +3,7 @@ import chalk from "chalk";
 
 import { registerAuthCommands } from "./commands/auth";
 import { registerBroadcastsCommands } from "./commands/broadcasts";
+import { registerDashboardCommand } from "./commands/dashboard";
 import { registerEventsCommands } from "./commands/events";
 import { registerFieldsCommands } from "./commands/fields";
 import { registerProfileCommands } from "./commands/profile";
@@ -50,6 +51,7 @@ registerFieldsCommands(program);
 registerEventsCommands(program);
 registerBroadcastsCommands(program);
 registerStatsCommands(program);
+registerDashboardCommand(program);
 
 // Future commands to be implemented:
 // - subscribers (search, import, tag, suppress)
@@ -129,6 +131,7 @@ async function showWelcomeScreen(): Promise<void> {
   console.log(`  ${bold("Quick Start")}`);
   console.log(`  ${dim("$")} bento auth login          ${dim("Authenticate with Bento")}`);
   console.log(`  ${dim("$")} bento stats site          ${dim("View your site statistics")}`);
+  console.log(`  ${dim("$")} bento dashboard           ${dim("Open the Bento web dashboard")}`);
   console.log(`  ${dim("$")} bento subscribers search  ${dim("Search your subscribers")}`);
   console.log(`  ${dim("$")} bento tags list           ${dim("List all tags")}`);
   console.log();
