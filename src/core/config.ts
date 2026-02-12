@@ -89,6 +89,18 @@ export class ConfigManager {
         );
       }
 
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error.code === "EACCES" || error.code === "EPERM")
+      ) {
+        throw new ConfigError(
+          `Permission denied reading config at ${this.configPath}. ` +
+            "Check file permissions or run with appropriate privileges.",
+          "PERMISSION_DENIED"
+        );
+      }
+
       throw error;
     }
   }
@@ -106,7 +118,11 @@ export class ConfigManager {
 
     const obj = data as Record<string, unknown>;
 
-    // Check version
+    // Check version — default to 1 if missing, only reject future versions
+    if (obj.version === undefined || obj.version === null) {
+      obj.version = 1;
+    }
+
     if (obj.version !== 1) {
       throw new ConfigError(
         `Unsupported config version: ${obj.version}. Expected version 1.`,
@@ -115,19 +131,20 @@ export class ConfigManager {
     }
 
     // Check current (string or null)
-    if (obj.current !== null && typeof obj.current !== "string") {
+    if (obj.current !== undefined && obj.current !== null && typeof obj.current !== "string") {
       throw new ConfigError(
         "Config 'current' field must be a string or null",
         "INVALID_SCHEMA"
       );
     }
+    // Default current to null if missing
+    if (obj.current === undefined) {
+      obj.current = null;
+    }
 
-    // Check profiles
+    // Default profiles to empty object if missing or invalid
     if (typeof obj.profiles !== "object" || obj.profiles === null) {
-      throw new ConfigError(
-        "Config 'profiles' field must be an object",
-        "INVALID_SCHEMA"
-      );
+      obj.profiles = {};
     }
 
     // Validate each profile
@@ -191,17 +208,32 @@ export class ConfigManager {
       );
     }
 
-    // Ensure directory exists
-    const dir = dirname(this.configPath);
-    await mkdir(dir, { recursive: true });
+    try {
+      // Ensure directory exists
+      const dir = dirname(this.configPath);
+      await mkdir(dir, { recursive: true });
 
-    // Write config file
-    const content = JSON.stringify(this.config, null, 2);
-    await writeFile(this.configPath, content, "utf-8");
+      // Write config file
+      const content = JSON.stringify(this.config, null, 2);
+      await writeFile(this.configPath, content, "utf-8");
 
-    // Set secure file permissions (owner read/write only) on Unix
-    if (process.platform !== "win32") {
-      await chmod(this.configPath, 0o600);
+      // Set secure file permissions (owner read/write only) on Unix
+      if (process.platform !== "win32") {
+        await chmod(this.configPath, 0o600);
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error.code === "EACCES" || error.code === "EPERM")
+      ) {
+        throw new ConfigError(
+          `Permission denied writing config to ${this.configPath}. ` +
+            "Check file/directory permissions or run with appropriate privileges.",
+          "PERMISSION_DENIED"
+        );
+      }
+      throw error;
     }
   }
 
