@@ -3,6 +3,8 @@
  *
  * Commands:
  * - bento stats site - Show site-wide statistics
+ * - bento stats segment <segment-id> - Show segment statistics
+ * - bento stats report <report-id> - Show report statistics
  */
 
 import { Command } from "commander";
@@ -71,16 +73,80 @@ export function registerStatsCommands(program: Command): void {
         output.divider();
       } catch (error) {
         output.failSpinner();
-        if (error instanceof CLIError) {
-          output.error(error.message);
-        } else if (error instanceof Error) {
-          output.error(error.message);
-        } else {
-          output.error("An unexpected error occurred.");
-        }
-        process.exit(1);
+        handleError(error);
       }
     });
+
+  stats
+    .command("segment")
+    .description("Show statistics for a segment")
+    .argument("<segment-id>", "Segment ID")
+    .action(async (segmentId: string) => {
+      try {
+        output.startSpinner("Fetching segment stats...");
+
+        const segmentStats = await bento.getSegmentStats(segmentId);
+
+        output.stopSpinner();
+
+        if (output.isJson()) {
+          output.json({
+            success: true,
+            error: null,
+            data: segmentStats,
+            meta: { count: 1 },
+          });
+          return;
+        }
+
+        if (output.isQuiet()) return;
+
+        output.object(segmentStats as unknown as Record<string, unknown>);
+      } catch (error) {
+        output.failSpinner();
+        handleError(error);
+      }
+    });
+
+  stats
+    .command("report")
+    .description("Show statistics for a report")
+    .argument("<report-id>", "Report ID")
+    .action(async (reportId: string) => {
+      try {
+        output.startSpinner("Fetching report stats...");
+
+        const reportStats = await bento.getReportStats(reportId);
+
+        output.stopSpinner();
+
+        if (output.isJson()) {
+          output.json({
+            success: true,
+            error: null,
+            data: reportStats,
+            meta: { count: 1 },
+          });
+          return;
+        }
+
+        if (output.isQuiet()) return;
+
+        output.object(reportStats as unknown as Record<string, unknown>);
+      } catch (error) {
+        output.failSpinner();
+        handleError(error);
+      }
+    });
+}
+
+function handleError(error: unknown): void {
+  if (error instanceof CLIError || error instanceof Error) {
+    output.error(error.message);
+  } else {
+    output.error("An unexpected error occurred.");
+  }
+  process.exit(1);
 }
 
 /**

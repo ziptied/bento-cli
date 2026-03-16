@@ -49,10 +49,9 @@ describe("BentoClient", () => {
       // Spy on config module to use our test config
       const configModule = await import("../../src/core/config");
       const originalConfig = configModule.config;
-      const getCurrentProfileSpy = spyOn(
-        originalConfig,
-        "getCurrentProfile"
-      ).mockImplementation(async () => null);
+      const getCurrentProfileSpy = spyOn(originalConfig, "getCurrentProfile").mockImplementation(
+        async () => null
+      );
 
       try {
         await expect(testClient.getClient()).rejects.toThrow(CLIError);
@@ -228,14 +227,12 @@ describe("BentoClient", () => {
       };
 
       const configModule = await import("../../src/core/config");
-      spyOn(configModule.config, "getCurrentProfile").mockImplementation(
-        async () => ({
-          apiKey: "test-api-key",
-          siteId: "test-site-id",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-      );
+      spyOn(configModule.config, "getCurrentProfile").mockImplementation(async () => ({
+        apiKey: "test-api-key",
+        siteId: "test-site-id",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
     });
 
     it("translates NotAuthorizedError to AUTH_FAILED", async () => {
@@ -412,17 +409,13 @@ describe("SDK wrapper methods", () => {
         },
         Tags: {
           getTags: mock(() =>
-            Promise.resolve([
-              { id: "tag-1", type: "tag", attributes: { name: "test-tag" } },
-            ])
+            Promise.resolve([{ id: "tag-1", type: "tag", attributes: { name: "test-tag" } }])
           ),
           createTag: mock(() => Promise.resolve([{ id: "tag-1" }])),
         },
         Fields: {
           getFields: mock(() =>
-            Promise.resolve([
-              { id: "field-1", type: "field", attributes: { key: "test_field" } },
-            ])
+            Promise.resolve([{ id: "field-1", type: "field", attributes: { key: "test_field" } }])
           ),
           createField: mock(() => Promise.resolve([{ id: "field-1" }])),
         },
@@ -431,6 +424,34 @@ describe("SDK wrapper methods", () => {
             Promise.resolve({
               total_subscribers: 100,
               active_subscribers: 90,
+            })
+          ),
+        },
+        Sequences: {
+          getSequences: mock(() =>
+            Promise.resolve([
+              {
+                id: "sequence-1",
+                type: "sequences",
+                attributes: {
+                  name: "Welcome Sequence",
+                  created_at: "2025-01-01T00:00:00Z",
+                  email_templates: [{ id: 1, subject: "Welcome", stats: null }],
+                },
+              },
+            ])
+          ),
+          createSequenceEmail: mock(() =>
+            Promise.resolve({
+              id: "template-1",
+              type: "email_templates",
+              attributes: {
+                name: "Welcome",
+                subject: "Welcome",
+                html: "<p>Welcome</p>",
+                created_at: "2025-01-01T00:00:00Z",
+                stats: null,
+              },
             })
           ),
         },
@@ -457,8 +478,9 @@ describe("SDK wrapper methods", () => {
     // Override getClient to return mock SDK
     (client as any).sdk = mockSdk;
     (client as any).profile = {
-      apiKey: "test-key",
-      siteId: "test-site",
+      publishableKey: "test-pub-key",
+      secretKey: "test-secret-key",
+      siteUuid: "test-site-uuid",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -671,6 +693,72 @@ describe("SDK wrapper methods", () => {
       expect(stats.total_subscribers).toBe(100);
       expect(stats.active_subscribers).toBe(90);
       expect(mockSdk.V1.Stats.getSiteStats).toHaveBeenCalled();
+    });
+  });
+
+  describe("sequence operations", () => {
+    it("getSequences returns sequence array", async () => {
+      const sequences = await client.getSequences();
+
+      expect(sequences).toHaveLength(1);
+      expect(sequences?.[0].id).toBe("sequence-1");
+      expect(mockSdk.V1.Sequences.getSequences).toHaveBeenCalled();
+    });
+
+    it("createSequenceEmail uses SDK method when available", async () => {
+      const result = await client.createSequenceEmail("sequence-1", {
+        subject: "Welcome",
+        html: "<p>Welcome</p>",
+      });
+
+      expect(result?.id).toBe("template-1");
+      expect(mockSdk.V1.Sequences.createSequenceEmail).toHaveBeenCalledWith("sequence-1", {
+        subject: "Welcome",
+        html: "<p>Welcome</p>",
+      });
+    });
+
+    it("createSequenceEmail falls back to API POST when SDK method is unavailable", async () => {
+      mockSdk.V1.Sequences.createSequenceEmail = undefined;
+
+      const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: "template-2",
+              type: "email_templates",
+              attributes: {
+                name: "Fallback",
+                subject: "Fallback",
+                html: "<p>Fallback</p>",
+                created_at: "2025-01-01T00:00:00Z",
+                stats: null,
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      );
+
+      try {
+        const result = await client.createSequenceEmail("sequence_42", {
+          subject: "Fallback",
+          html: "<p>Fallback</p>",
+        });
+
+        expect(result?.id).toBe("template-2");
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        const [requestUrl, init] = fetchSpy.mock.calls[0];
+        expect(String(requestUrl)).toContain("/fetch/sequences/sequence_42/emails/templates");
+        expect(String(requestUrl)).toContain("site_uuid=test-site-uuid");
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBe(JSON.stringify({ subject: "Fallback", html: "<p>Fallback</p>" }));
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
   });
 
