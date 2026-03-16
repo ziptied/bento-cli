@@ -11,6 +11,23 @@ description: >
 
 A command-line interface for [Bento](https://bentonow.com) email marketing. Manage subscribers, tags, events, and broadcasts directly from the terminal.
 
+## Installation & Usage
+
+```bash
+# Recommended: Run with npx (always uses latest version)
+npx @bentonow/bento-cli --help
+
+# Or install globally
+npm install -g @bentonow/bento-cli
+bento --help
+```
+
+**Why npx is recommended:**
+- Always fetches the latest version automatically
+- No installation or updates required
+- Ideal for CI/CD pipelines and scripts
+- Works immediately without global install permissions
+
 ## Philosophy: Safety-First Automation
 
 Email operations affect real people. A bulk operation mistake can unsubscribe thousands or spam your entire list. The Bento CLI is designed with **safety-first automation** in mind.
@@ -41,6 +58,12 @@ bento auth login \
   --secret-key "your-secret-key" \
   --site-uuid "your-site-uuid"
 
+# Using npx (no global install needed)
+npx @bentonow/bento-cli auth login \
+  --publishable-key "your-publishable-key" \
+  --secret-key "your-secret-key" \
+  --site-uuid "your-site-uuid"
+
 # Check authentication status
 bento auth status
 
@@ -64,12 +87,11 @@ bento profile remove staging    # Remove a profile
 
 ### Subscribers
 
-**Search subscribers**:
+**Look up a subscriber** (requires `--email` or `--uuid`):
 ```bash
 bento subscribers search --email user@example.com
-bento subscribers search --tag vip
-bento subscribers search --field plan=pro
-bento subscribers search --tag active --page 2 --per-page 50
+bento subscribers search --email user@example.com --tag vip
+bento subscribers search --email user@example.com --field plan=pro
 ```
 
 **Import from CSV** (requires `email` column):
@@ -98,6 +120,7 @@ bento subscribers subscribe --email user@example.com     # Re-subscribe
 
 ```bash
 bento tags list                           # List all tags
+bento tags list news                      # Search tags by name
 bento tags create "new-feature-announcement"  # Create tag
 bento tags delete "old-tag"               # Delete (API limitation applies)
 ```
@@ -106,6 +129,7 @@ bento tags delete "old-tag"               # Delete (API limitation applies)
 
 ```bash
 bento fields list                         # List all fields
+bento fields list company                 # Search fields by key or name
 bento fields create company_size          # Create field
 ```
 
@@ -126,6 +150,7 @@ bento events track \
 
 ```bash
 bento broadcasts list                     # List all broadcasts
+bento broadcasts list --page 1 --per-page 10  # Paginate results
 
 bento broadcasts create \
   --name "January Newsletter" \
@@ -238,10 +263,10 @@ bento subscribers tag --file users.csv --add vip --confirm
 **Not using --json for scripting**:
 ```bash
 # BAD: Parsing human-readable tables
-bento subscribers search --tag vip | grep email
+bento subscribers search --email user@example.com | grep email
 
 # GOOD: Structured JSON output
-bento subscribers search --tag vip --json | jq '.data[].email'
+bento subscribers search --email user@example.com --json | jq '.data[].email'
 ```
 
 **Running destructive operations without understanding scope**:
@@ -259,15 +284,29 @@ bento subscribers unsubscribe --file list.csv --dry-run
 
 ### CI/CD: Sync subscribers from database
 ```bash
+#!/bin/bash
+# Export and sync (using npx for CI environments)
 psql -c "COPY (SELECT email, name FROM users WHERE active) TO STDOUT CSV HEADER" \
   > /tmp/active-users.csv
 
-bento subscribers import /tmp/active-users.csv --confirm --json
+npx @bentonow/bento-cli subscribers import /tmp/active-users.csv --confirm --json
+```
+
+### GitHub Actions Example
+```yaml
+- name: Sync subscribers to Bento
+  run: |
+    npx @bentonow/bento-cli auth login \
+      --publishable-key "${{ secrets.BENTO_PUB_KEY }}" \
+      --secret-key "${{ secrets.BENTO_SECRET_KEY }}" \
+      --site-uuid "${{ secrets.BENTO_SITE_UUID }}"
+    npx @bentonow/bento-cli subscribers import users.csv --confirm --json
 ```
 
 ### Scripting: Batch tag operations
 ```bash
-bento subscribers search --tag inactive --json \
+# Check if a subscriber has the "inactive" tag
+bento subscribers search --email user@example.com --tag inactive --json \
   | jq -r '.data[].email' \
   | while read email; do
       bento subscribers tag --email "$email" --add "needs-reengagement" --confirm
