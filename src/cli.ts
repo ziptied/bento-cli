@@ -4,14 +4,21 @@ import chalk from "chalk";
 import { registerAuthCommands } from "./commands/auth";
 import { registerBroadcastsCommands } from "./commands/broadcasts";
 import { registerDashboardCommand } from "./commands/dashboard";
+import { registerEmailsCommands } from "./commands/emails";
 import { registerEventsCommands } from "./commands/events";
+import { registerExperimentalCommands } from "./commands/experimental";
 import { registerFieldsCommands } from "./commands/fields";
+import { registerFormsCommands } from "./commands/forms";
 import { registerProfileCommands } from "./commands/profile";
+import { registerSequencesCommands } from "./commands/sequences";
 import { registerStatsCommands } from "./commands/stats";
 import { registerSubscribersCommands } from "./commands/subscribers";
 import { registerTagsCommands } from "./commands/tags";
+import { registerTemplatesCommands } from "./commands/templates";
+import { registerWorkflowsCommands } from "./commands/workflows";
 import { output } from "./core/output";
 import { config } from "./core/config";
+import pkg from "../package.json";
 
 const program = new Command();
 
@@ -20,7 +27,7 @@ program
   .description(
     "Bento CLI - Command-oriented interface for Bento email marketing"
   )
-  .version("0.1.1")
+  .version(pkg.version)
   .option("--json", "Output machine-readable JSON")
   .option("--quiet", "Suppress non-essential output (errors still print)")
   .hook("preAction", (thisCommand) => {
@@ -50,7 +57,13 @@ registerTagsCommands(program);
 registerFieldsCommands(program);
 registerEventsCommands(program);
 registerBroadcastsCommands(program);
+registerSequencesCommands(program);
 registerStatsCommands(program);
+registerEmailsCommands(program);
+registerWorkflowsCommands(program);
+registerTemplatesCommands(program);
+registerFormsCommands(program);
+registerExperimentalCommands(program);
 registerDashboardCommand(program);
 
 // Future commands to be implemented:
@@ -93,7 +106,7 @@ function configureOutputMode(options: { json?: boolean; quiet?: boolean }): void
 }
 
 async function showWelcomeScreen(): Promise<void> {
-  const version = "0.1.1";
+  const version = pkg.version;
   
   // Bento brand color (purple)
   const brand = chalk.hex("#8B5CF6");

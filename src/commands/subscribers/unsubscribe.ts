@@ -12,6 +12,7 @@ interface UnsubscribeOptions {
   limit?: string;
   sample?: string;
   confirm?: boolean;
+  triggerAutomations?: boolean;
 }
 
 export function registerUnsubscribeCommand(subscribers: Command): void {
@@ -19,7 +20,8 @@ export function registerUnsubscribeCommand(subscribers: Command): void {
     .command("unsubscribe")
     .description("Unsubscribe subscribers (stop email delivery)")
     .option("-e, --email <email>", "Single email to unsubscribe")
-    .option("-f, --file <file>", "CSV or newline list of subscriber emails");
+    .option("-f, --file <file>", "CSV or newline list of subscriber emails")
+    .option("--trigger-automations", "Use automation-aware unsubscribe (triggers automations)");
 
   Safety.addFlags(command);
 
@@ -44,7 +46,11 @@ export function registerUnsubscribeCommand(subscribers: Command): void {
           isDangerous: true,
           execute: async (emails) => {
             for (const email of emails) {
-              await bento.unsubscribe(email);
+              if (opts.triggerAutomations) {
+                await bento.removeSubscriber(email);
+              } else {
+                await bento.unsubscribe(email);
+              }
             }
             emitResult(emails.length);
           },
