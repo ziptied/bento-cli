@@ -42,21 +42,25 @@ export function registerWorkflowsCommands(program: Command): void {
           return;
         }
 
+        const hasStatus = result.some((w) => "status" in (w.attributes ?? {}));
+
+        const columns = [
+          { key: "id", header: "ID" },
+          { key: "name", header: "Name" },
+          ...(hasStatus ? [{ key: "status", header: "Status" }] : []),
+          { key: "created_at", header: "Created" },
+          { key: "templates", header: "Templates" },
+        ];
+
         output.table(
           result.map((w) => ({
             id: w.id,
             name: w.attributes?.name ?? "N/A",
+            ...(hasStatus ? { status: (w.attributes as any)?.status ?? "N/A" } : {}),
             created_at: w.attributes?.created_at ?? "N/A",
             templates: w.attributes?.email_templates?.length ?? 0,
           })),
-          {
-            columns: [
-              { key: "id", header: "ID" },
-              { key: "name", header: "Name" },
-              { key: "created_at", header: "Created" },
-              { key: "templates", header: "Templates" },
-            ],
-          }
+          { columns }
         );
       } catch (error) {
         output.failSpinner();
