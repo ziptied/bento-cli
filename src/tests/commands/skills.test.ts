@@ -1,9 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { spawnSync } from "bun";
-import { existsSync, mkdirSync, readlinkSync, rmSync, writeFileSync, lstatSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve, relative, dirname } from "node:path";
+import { existsSync, mkdirSync, readlinkSync, rmSync, lstatSync } from "node:fs";
 
 function runCLI(args: string[], env: Record<string, string> = {}) {
   const result = spawnSync(["bun", "run", "src/cli.ts", ...args], {
