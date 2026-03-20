@@ -23,7 +23,7 @@ import type {
   Broadcast,
   ContentModerationResult,
   CreateBroadcastInput,
-  CreateSequenceEmailParameters,
+  CreateSequenceEmailInput,
   EmailTemplate,
   Field,
   FormResponse,
@@ -36,6 +36,7 @@ import type {
   SDKErrorCode,
   SegmentStats,
   Sequence,
+  UpdateSequenceEmailInput,
   SiteStats,
   Subscriber,
   SubscriberSearchParams,
@@ -74,7 +75,9 @@ export class CLIError extends Error {
 export class BentoClient {
   private sdk: Analytics | null = null;
   private profile: BentoProfile | null = null;
-  private readonly apiBaseUrl = process.env.BENTO_API_BASE_URL ?? "https://app.bentonow.com/api/v1";
+  private readonly apiBaseUrl = BentoClient.validateApiBaseUrl(
+    process.env.BENTO_API_BASE_URL ?? "https://app.bentonow.com/api/v1"
+  );
 
   /**
    * Get or create SDK instance with current profile credentials
@@ -722,46 +725,82 @@ export class BentoClient {
   // ============================================================
 
   /**
-   * List all sequences
+   * List all sequences.
    */
-  async getSequences(): Promise<Sequence[] | null> {
+  async getSequences(): Promise<Sequence[]> {
     const sdk = await this.getClient();
     return this.handleApiCall(() => sdk.V1.Sequences.getSequences());
   }
 
   /**
-   * Create a sequence email template
+   * Create an email template in a sequence.
    */
   async createSequenceEmail(
     sequenceId: string,
-    params: CreateSequenceEmailParameters
+    input: CreateSequenceEmailInput
   ): Promise<EmailTemplate | null> {
+    if (!/^sequence_[a-zA-Z0-9_-]+$/.test(sequenceId)) {
+      throw new CLIError("Sequence ID must be a valid prefix_id.", "VALIDATION_ERROR", 422);
+    }
+
     const sdk = await this.getClient();
-    const sequenceApi = sdk.V1.Sequences as unknown as {
-      createSequenceEmail?: (
-        id: string,
-        input: CreateSequenceEmailParameters
-      ) => Promise<EmailTemplate | null>;
+    const payload = {
+      subject: input.subject,
+      html: input.html,
+      inbox_snippet: input.inboxSnippet,
+      delay_interval: input.delayInterval,
+      delay_interval_count: input.delayCount,
+      editor_choice: input.editorChoice,
+      cc: input.cc,
+      bcc: input.bcc,
+      to: input.to,
     };
 
-    if (typeof sequenceApi.createSequenceEmail === "function") {
-      return this.handleApiCall(() => sequenceApi.createSequenceEmail(sequenceId, params));
+    const sequencesApi = sdk.V1.Sequences as {
+      createSequenceEmail?: (id: string, parameters: Record<string, unknown>) => Promise<EmailTemplate | null>;
+    };
+
+    if (typeof sequencesApi.createSequenceEmail === "function") {
+      return this.handleApiCall(() => sequencesApi.createSequenceEmail!(sequenceId, payload));
     }
 
-    const response = await this.apiPost<{ data?: EmailTemplate } | EmailTemplate>(
-      `/fetch/sequences/${encodeURIComponent(sequenceId)}/emails/templates`,
-      params
-    );
+    // Backward-compatible fallback for SDK versions that don't expose createSequenceEmail yet.
+    return this.handleApiCall(async () => {
+      const response = await this.apiPost<{ data?: EmailTemplate } | EmailTemplate>(
+        `/fetch/sequences/${sequenceId}/emails/templates`,
+        { email_template: payload }
+      );
+      if (response && typeof response === "object" && "data" in response) {
+        const wrapped = response as { data?: EmailTemplate };
+        return wrapped.data ?? null;
+      }
+      return response as EmailTemplate;
+    });
+  }
 
-    if (!response) {
-      return null;
+  /**
+   * Update an existing email template by template ID.
+   */
+  async updateSequenceEmail(
+    templateId: string,
+    input: UpdateSequenceEmailInput
+  ): Promise<EmailTemplate | null> {
+    if (!/^\d+$/.test(templateId)) {
+      throw new CLIError("Template ID must be a positive integer.", "VALIDATION_ERROR", 422);
+    }
+    const numericTemplateId = Number.parseInt(templateId, 10);
+    if (!Number.isFinite(numericTemplateId) || numericTemplateId <= 0) {
+      throw new CLIError("Template ID must be a positive integer.", "VALIDATION_ERROR", 422);
     }
 
-    if ("data" in response) {
-      return response.data ?? null;
-    }
+    const sdk = await this.getClient();
+    const payload: { id: number; subject?: string; html?: string } = {
+      id: numericTemplateId,
+    };
+    if (input.subject !== undefined) payload.subject = input.subject;
+    if (input.html !== undefined) payload.html = input.html;
 
-    return response;
+    return this.handleApiCall(() => sdk.V1.EmailTemplates.updateEmailTemplate(payload));
   }
 
   // ============================================================
@@ -901,13 +940,13 @@ export class BentoClient {
     }
   }
 
-  private async apiPost<T>(
-    path: string,
-    body: Record<string, unknown>
-  ): Promise<T> {
+  private async apiPost<T>(path: string, payload: Record<string, unknown>): Promise<T> {
     const profile = await this.ensureProfileLoaded();
     const url = new URL(`${this.apiBaseUrl}${path}`);
-    url.searchParams.set("site_uuid", profile.siteUuid);
+    const body = {
+      ...payload,
+      site_uuid: profile.siteUuid,
+    };
 
     const response = await fetch(url, {
       method: "POST",
@@ -919,8 +958,8 @@ export class BentoClient {
     });
 
     if (!response.ok) {
-      const responseBody = await response.text();
-      throw this.createHttpError(response.status, responseBody || response.statusText);
+      const bodyText = await response.text();
+      throw this.createHttpError(response.status, bodyText || response.statusText);
     }
 
     try {
@@ -977,6 +1016,29 @@ export class BentoClient {
           "UNKNOWN",
           status
         );
+    }
+  }
+
+  private static validateApiBaseUrl(baseUrl: string): string {
+    try {
+      const parsed = new URL(baseUrl);
+      const isLocalHost =
+        parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      const isBentoHost = parsed.hostname.endsWith(".bentonow.com") || parsed.hostname === "bentonow.com";
+      const hasAllowedProtocol =
+        parsed.protocol === "https:" || (isLocalHost && parsed.protocol === "http:");
+
+      if (!hasAllowedProtocol || (!isLocalHost && !isBentoHost)) {
+        throw new Error("Invalid BENTO_API_BASE_URL host");
+      }
+
+      return parsed.toString().replace(/\/$/, "");
+    } catch {
+      throw new CLIError(
+        "Invalid BENTO_API_BASE_URL. Use https://*.bentonow.com (or http://localhost for local development).",
+        "VALIDATION_ERROR",
+        422
+      );
     }
   }
 }

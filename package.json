@@ -1,18 +1,12 @@
 {
   "name": "@bentonow/bento-cli",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "description": "Command-line interface for Bento email marketing. Manage subscribers, tags, events, and broadcasts from your terminal.",
   "type": "module",
   "bin": {
     "bento": "./bin/bento"
   },
-  "files": [
-    "bin",
-    "dist",
-    "skill",
-    "LICENSE",
-    "README.md"
-  ],
+  "files": ["bin", "dist", "skill", "LICENSE", "README.md"],
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun run scripts/build.ts",
@@ -22,7 +16,7 @@
     "prepublishOnly": "bun test && bun run build"
   },
   "dependencies": {
-    "@bentonow/bento-node-sdk": "^1.0.5",
+    "@bentonow/bento-node-sdk": "latest",
     "@inquirer/prompts": "8.2.0",
     "chalk": "5.6.2",
     "commander": "^12.1.0",

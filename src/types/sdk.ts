@@ -78,22 +78,9 @@ export type {
   PurchaseItem,
 } from "@bentonow/bento-node-sdk/src/sdk/batch/events";
 
+
 // Base entity type
 export type { BaseEntity } from "@bentonow/bento-node-sdk/src/sdk/types";
-
-export type SequenceDelayInterval = "minutes" | "hours" | "days" | "months";
-
-export interface CreateSequenceEmailParameters {
-  subject: string;
-  html: string;
-  inbox_snippet?: string;
-  delay_interval?: SequenceDelayInterval;
-  delay_interval_count?: number;
-  editor_choice?: string;
-  cc?: string;
-  bcc?: string;
-  to?: string;
-}
 
 /**
  * CLI error codes for SDK operations
@@ -170,4 +157,23 @@ export interface AddFieldParams<S = Record<string, unknown>> {
 export interface ImportResult {
   imported: number;
   failed?: number;
+}
+
+export type SequenceDelayInterval = "minutes" | "hours" | "days" | "months";
+
+export interface CreateSequenceEmailInput {
+  subject: string;
+  html: string;
+  inboxSnippet?: string;
+  delayInterval?: SequenceDelayInterval;
+  delayCount?: number;
+  editorChoice?: string;
+  cc?: string;
+  bcc?: string;
+  to?: string;
+}
+
+export interface UpdateSequenceEmailInput {
+  subject?: string;
+  html?: string;
 }

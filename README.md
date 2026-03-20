@@ -197,6 +197,50 @@ bento broadcasts create \
   --include-tags "newsletter,active"
 ```
 
+### Sequences
+
+```bash
+# List all sequences
+bento sequences list
+
+# Create a sequence email with inline HTML
+bento sequences create-email \
+  --sequence-id sequence_abc123 \
+  --subject "Welcome to Bento" \
+  --html "<h1>Hi there</h1>" \
+  --delay-interval days \
+  --delay-count 7
+
+# Create from an HTML file
+bento sequences create-email \
+  --sequence-id sequence_abc123 \
+  --subject "Day 2 follow-up" \
+  --html-file ./emails/day-2.html
+
+# Update an existing sequence email template
+bento sequences update-email \
+  --template-id 12345 \
+  --subject "Updated Welcome Subject"
+
+# Update subject + HTML inline
+bento sequences update-email \
+  --template-id 12345 \
+  --subject "Refined Subject" \
+  --html "<h1>Updated body</h1>"
+
+# Update HTML from file
+bento sequences update-email \
+  --template-id 12345 \
+  --html-file ./emails/updated-welcome.html
+```
+
+Maintainer release order for this feature:
+1. Ship the API endpoint in `bento`.
+2. Publish a `bento-node-sdk` version that includes `createSequenceEmail`.
+3. Release `bento-cli` against that SDK version.
+
+Current API limitation: sequence email updates support `subject` and `html` fields only.
+
 ### Statistics
 
 ```bash

@@ -706,13 +706,13 @@ describe("SDK wrapper methods", () => {
     });
 
     it("createSequenceEmail uses SDK method when available", async () => {
-      const result = await client.createSequenceEmail("sequence-1", {
+      const result = await client.createSequenceEmail("sequence_1", {
         subject: "Welcome",
         html: "<p>Welcome</p>",
       });
 
       expect(result?.id).toBe("template-1");
-      expect(mockSdk.V1.Sequences.createSequenceEmail).toHaveBeenCalledWith("sequence-1", {
+      expect(mockSdk.V1.Sequences.createSequenceEmail).toHaveBeenCalledWith("sequence_1", {
         subject: "Welcome",
         html: "<p>Welcome</p>",
       });
@@ -753,9 +753,11 @@ describe("SDK wrapper methods", () => {
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         const [requestUrl, init] = fetchSpy.mock.calls[0];
         expect(String(requestUrl)).toContain("/fetch/sequences/sequence_42/emails/templates");
-        expect(String(requestUrl)).toContain("site_uuid=test-site-uuid");
         expect(init?.method).toBe("POST");
-        expect(init?.body).toBe(JSON.stringify({ subject: "Fallback", html: "<p>Fallback</p>" }));
+        const parsedBody = JSON.parse(init?.body as string);
+        expect(parsedBody.site_uuid).toBe("test-site-uuid");
+        expect(parsedBody.email_template.subject).toBe("Fallback");
+        expect(parsedBody.email_template.html).toBe("<p>Fallback</p>");
       } finally {
         fetchSpy.mockRestore();
       }

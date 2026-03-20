@@ -1,43 +1,61 @@
 /**
- * Sequences commands
+ * Sequence commands
  *
  * Commands:
  * - bento sequences list - List all sequences
- * - bento sequences email create <sequence-id> --subject <subject> --html <html>
+ * - bento sequences create-email - Create an email template in a sequence
+ * - bento sequences update-email - Update an existing sequence email template
  */
 
-import type { Command } from "commander";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { Command } from "commander";
+import { bento, CLIError } from "../core/sdk";
 import { output } from "../core/output";
-import { CLIError, bento } from "../core/sdk";
-import type { CreateSequenceEmailParameters, Sequence, SequenceDelayInterval } from "../types/sdk";
+import type {
+  CreateSequenceEmailInput,
+  SequenceDelayInterval,
+  UpdateSequenceEmailInput,
+} from "../types/sdk";
 
-interface EmailCreateOptions {
+interface CreateEmailOptions {
+  sequenceId: string;
   subject: string;
-  html: string;
-  delayInterval?: string;
+  html?: string;
+  htmlFile?: string;
+  inboxSnippet?: string;
+  delayInterval?: SequenceDelayInterval;
   delayCount?: string;
-  snippet?: string;
-  editor?: string;
+  editorChoice?: string;
   cc?: string;
   bcc?: string;
   to?: string;
 }
 
-const VALID_DELAY_INTERVALS: SequenceDelayInterval[] = ["minutes", "hours", "days", "months"];
+interface UpdateEmailOptions {
+  templateId: string;
+  subject?: string;
+  html?: string;
+  htmlFile?: string;
+}
+
+const ALLOWED_DELAY_INTERVALS: SequenceDelayInterval[] = ["minutes", "hours", "days", "months"];
+const MAX_TEMPLATE_HTML_BYTES = 524_288;
+const MAX_DELAY_COUNT = 999;
 
 export function registerSequencesCommands(program: Command): void {
   const sequences = program.command("sequences").description("Manage email sequences");
 
   sequences
     .command("list")
-    .description("List all sequences")
+    .description("List sequences")
     .action(async () => {
+      output.startSpinner("Fetching sequences...");
       try {
-        output.startSpinner("Fetching sequences...");
-        const sequenceList = await bento.getSequences();
+        const result = await bento.getSequences();
         output.stopSpinner();
 
-        if (!sequenceList || sequenceList.length === 0) {
+        if (result.length === 0) {
           if (output.isJson()) {
             output.json({
               success: true,
@@ -51,20 +69,21 @@ export function registerSequencesCommands(program: Command): void {
           return;
         }
 
-        if (output.isJson()) {
-          output.json({
-            success: true,
-            error: null,
-            data: sequenceList,
-            meta: { count: sequenceList.length },
-          });
-          return;
-        }
+        const rows = result.map((sequence) => ({
+          id: sequence.id,
+          name: sequence.attributes.name,
+          emails: sequence.attributes.email_templates.length,
+          created: formatDate(sequence.attributes.created_at),
+        }));
 
-        output.table(sequencesToRows(sequenceList), {
-          columns: sequenceColumns(),
-          meta: { total: sequenceList.length },
-          emptyMessage: "No sequences found.",
+        output.table(rows, {
+          columns: [
+            { key: "id", header: "ID" },
+            { key: "name", header: "NAME" },
+            { key: "emails", header: "EMAILS" },
+            { key: "created", header: "CREATED" },
+          ],
+          meta: { total: rows.length },
         });
       } catch (error) {
         output.failSpinner();
@@ -72,47 +91,40 @@ export function registerSequencesCommands(program: Command): void {
       }
     });
 
-  const email = sequences.command("email").description("Manage sequence emails");
-
-  email
-    .command("create <sequence-id>")
-    .description("Create a new email in a sequence")
-    .requiredOption("-s, --subject <subject>", "Email subject line")
-    .requiredOption("-H, --html <html>", "Email HTML content")
-    .option("--delay-interval <interval>", "Delay unit: minutes, hours, days, or months")
-    .option("--delay-count <count>", "Delay amount (requires --delay-interval)")
-    .option("--snippet <text>", "Inbox preview snippet")
-    .option("--editor <mode>", "Editor mode")
-    .option("--cc <email>", "CC email address")
-    .option("--bcc <email>", "BCC email address")
-    .option("--to <email>", "Override recipient email")
-    .action(async (sequenceId: string, options: EmailCreateOptions) => {
+  sequences
+    .command("create-email")
+    .description("Create an email template in a sequence")
+    .requiredOption("--sequence-id <id>", "Sequence ID (e.g. sequence_abc123)")
+    .requiredOption("--subject <subject>", "Email subject line")
+    .option("--html <html>", "Email HTML content")
+    .option("--html-file <path>", "Path to an HTML file")
+    .option("--inbox-snippet <text>", "Inbox preview/snippet text")
+    .option("--delay-interval <interval>", "Delay interval: minutes, hours, days, months")
+    .option("--delay-count <n>", "Delay interval count (positive integer)")
+    .option("--editor-choice <choice>", "Editor choice, e.g. plain, fancy, or raw")
+    .option("--cc <cc>", "CC value (supports Liquid)")
+    .option("--bcc <bcc>", "BCC value (supports Liquid)")
+    .option("--to <to>", "Recipient value (supports Liquid)")
+    .action(async (options: CreateEmailOptions) => {
       try {
-        const delayInterval = parseDelayInterval(options.delayInterval);
+        validateSequenceId(options.sequenceId);
+        const html = await resolveHtmlInput(options.html, options.htmlFile);
+        validateDelayOptions(options.delayInterval, options.delayCount);
 
-        if (options.delayCount && !delayInterval) {
-          output.error("--delay-count requires --delay-interval to be set.");
-          process.exit(2);
-        }
-
-        const delayCount = options.delayCount
-          ? parsePositiveInteger(options.delayCount, "--delay-count")
-          : undefined;
-
-        const params: CreateSequenceEmailParameters = {
+        const input: CreateSequenceEmailInput = {
           subject: options.subject,
-          html: options.html,
-          inbox_snippet: options.snippet,
-          delay_interval: delayInterval,
-          delay_interval_count: delayCount,
-          editor_choice: options.editor,
+          html,
+          inboxSnippet: options.inboxSnippet,
+          delayInterval: options.delayInterval,
+          delayCount: options.delayCount ? Number.parseInt(options.delayCount, 10) : undefined,
+          editorChoice: options.editorChoice,
           cc: options.cc,
           bcc: options.bcc,
           to: options.to,
         };
 
         output.startSpinner("Creating sequence email...");
-        const result = await bento.createSequenceEmail(sequenceId, params);
+        const result = await bento.createSequenceEmail(options.sequenceId, input);
         output.stopSpinner("Sequence email created");
 
         if (output.isJson()) {
@@ -125,10 +137,56 @@ export function registerSequencesCommands(program: Command): void {
           return;
         }
 
-        if (!output.isQuiet()) {
-          const idText = result?.id ? ` (ID: ${result.id})` : "";
-          output.success(`Created sequence email "${options.subject}"${idText}`);
+        const templateId = result?.id;
+        if (templateId) {
+          output.success(`Created email ${templateId} in sequence ${options.sequenceId}`);
+        } else {
+          output.success(`Created email in sequence ${options.sequenceId}`);
         }
+      } catch (error) {
+        output.failSpinner();
+        handleError(error);
+      }
+    });
+
+  sequences
+    .command("update-email")
+    .description("Update an existing sequence email template by template ID")
+    .requiredOption("--template-id <id>", "Email template ID (e.g. 12345)")
+    .option("--subject <subject>", "New email subject line")
+    .option("--html <html>", "New email HTML content")
+    .option("--html-file <path>", "Path to an HTML file")
+    .action(async (options: UpdateEmailOptions) => {
+      try {
+        const html = await resolveOptionalHtmlInput(options.html, options.htmlFile);
+        if (!options.subject && !html) {
+          throw new CLIError(
+            "At least one of --subject, --html, or --html-file must be provided.",
+            "VALIDATION_ERROR",
+            422
+          );
+        }
+
+        const input: UpdateSequenceEmailInput = {
+          subject: options.subject,
+          html,
+        };
+
+        output.startSpinner("Updating sequence email...");
+        const result = await bento.updateSequenceEmail(options.templateId, input);
+        output.stopSpinner("Sequence email updated");
+
+        if (output.isJson()) {
+          output.json({
+            success: true,
+            error: null,
+            data: result,
+            meta: { count: result ? 1 : 0 },
+          });
+          return;
+        }
+
+        output.success(`Updated email template ${options.templateId}`);
       } catch (error) {
         output.failSpinner();
         handleError(error);
@@ -136,50 +194,119 @@ export function registerSequencesCommands(program: Command): void {
     });
 }
 
-function sequencesToRows(sequences: Sequence[]) {
-  return sequences.map((sequence) => {
-    const templates = sequence.attributes.email_templates ?? [];
+async function resolveHtmlInput(html?: string, htmlFile?: string): Promise<string> {
+  const hasInlineHtml = Boolean(html);
+  const hasHtmlFile = Boolean(htmlFile);
 
-    return {
-      id: sequence.id,
-      name: sequence.attributes.name,
-      emails: templates.length.toString(),
-      created: formatDate(sequence.attributes.created_at),
-    };
-  });
-}
-
-function sequenceColumns() {
-  return [
-    { key: "id" as const, header: "ID" },
-    { key: "name" as const, header: "NAME" },
-    { key: "emails" as const, header: "EMAILS" },
-    { key: "created" as const, header: "CREATED" },
-  ];
-}
-
-function parsePositiveInteger(value: string, flag: string): number {
-  const numeric = Number.parseInt(value, 10);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    output.error(`${flag} must be a positive integer.`);
-    process.exit(2);
-  }
-  return numeric;
-}
-
-function parseDelayInterval(value?: string): SequenceDelayInterval | undefined {
-  if (!value) {
-    return undefined;
+  if (hasInlineHtml === hasHtmlFile) {
+    throw new CLIError(
+      "Provide exactly one of --html or --html-file.",
+      "VALIDATION_ERROR",
+      422
+    );
   }
 
-  if (VALID_DELAY_INTERVALS.includes(value as SequenceDelayInterval)) {
-    return value as SequenceDelayInterval;
+  if (html) {
+    validateHtmlSize(html);
+    return html;
   }
 
-  output.error(
-    `Invalid --delay-interval "${value}". Must be one of: ${VALID_DELAY_INTERVALS.join(", ")}`
-  );
-  process.exit(2);
+  try {
+    const safePath = resolveSafeHtmlPath(htmlFile as string);
+    const content = await readFile(safePath, "utf8");
+    validateHtmlSize(content);
+    return content;
+  } catch (error) {
+    if (error instanceof CLIError) throw error;
+    if (error instanceof Error && "code" in error) {
+      const code = String(error.code);
+      if (code === "ENOENT") {
+        throw new CLIError(`HTML file not found: ${htmlFile}`, "VALIDATION_ERROR", 422);
+      }
+      if (code === "EACCES") {
+        throw new CLIError(`Cannot read HTML file (permission denied): ${htmlFile}`, "VALIDATION_ERROR", 422);
+      }
+    }
+    throw new CLIError(`Unable to read HTML file: ${htmlFile}`, "VALIDATION_ERROR", 422);
+  }
+}
+
+async function resolveOptionalHtmlInput(
+  html?: string,
+  htmlFile?: string
+): Promise<string | undefined> {
+  if (!html && !htmlFile) return undefined;
+  return resolveHtmlInput(html, htmlFile);
+}
+
+function validateDelayOptions(delayInterval?: string, delayCount?: string): void {
+  if ((delayInterval && !delayCount) || (!delayInterval && delayCount)) {
+    throw new CLIError(
+      "--delay-interval and --delay-count must be provided together.",
+      "VALIDATION_ERROR",
+      422
+    );
+  }
+
+  if (delayInterval && !ALLOWED_DELAY_INTERVALS.includes(delayInterval as SequenceDelayInterval)) {
+    throw new CLIError(
+      `--delay-interval must be one of: ${ALLOWED_DELAY_INTERVALS.join(", ")}`,
+      "VALIDATION_ERROR",
+      422
+    );
+  }
+
+  if (delayCount) {
+    const parsed = Number.parseInt(delayCount, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0 || String(parsed) !== delayCount) {
+      throw new CLIError("--delay-count must be a positive integer.", "VALIDATION_ERROR", 422);
+    }
+    if (parsed > MAX_DELAY_COUNT) {
+      throw new CLIError(
+        `--delay-count must be less than or equal to ${MAX_DELAY_COUNT}.`,
+        "VALIDATION_ERROR",
+        422
+      );
+    }
+  }
+}
+
+function validateHtmlSize(html: string): void {
+  if (Buffer.byteLength(html, "utf8") > MAX_TEMPLATE_HTML_BYTES) {
+    throw new CLIError(
+      `HTML content must be under ${MAX_TEMPLATE_HTML_BYTES} bytes.`,
+      "VALIDATION_ERROR",
+      422
+    );
+  }
+}
+
+function validateSequenceId(sequenceId: string): void {
+  if (!/^sequence_[a-zA-Z0-9_-]+$/.test(sequenceId)) {
+    throw new CLIError(
+      "Sequence ID must be a valid prefix_id (e.g. sequence_abc123).",
+      "VALIDATION_ERROR",
+      422
+    );
+  }
+}
+
+function resolveSafeHtmlPath(inputPath: string): string {
+  const resolvedPath = path.resolve(inputPath);
+  const projectRoot = process.cwd();
+  const relativePath = path.relative(projectRoot, resolvedPath);
+  const isOutsideProject =
+    relativePath.startsWith("..") || path.isAbsolute(relativePath);
+
+  if (isOutsideProject) {
+    throw new CLIError(
+      "HTML file path must be within the current working directory.",
+      "VALIDATION_ERROR",
+      422
+    );
+  }
+
+  return resolvedPath;
 }
 
 function formatDate(isoDate: string): string {

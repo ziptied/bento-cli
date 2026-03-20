@@ -12,7 +12,7 @@ describe("bento CLI", () => {
   it("shows version with --version flag", () => {
     const result = spawnSync(["bun", "run", "src/cli.ts", "--version"]);
     const stdout = result.stdout.toString();
-    expect(stdout).toContain("0.1.1");
+    expect(stdout).toContain("0.1.5");
   });
 
   it("shows welcome screen when no command is provided", () => {
