@@ -204,9 +204,10 @@ export function registerSkillsCommands(program: Command): void {
         for (const skill of skillNames) {
           const src = resolve(sourceDir, skill);
           const dest = resolve(CANONICAL_DIR, skill);
-
-          if (existsSync(dest)) {
             if (!options.force) {
+              // Already installed — skip without overwriting; use --force to refresh
+              continue;
+            }
               // Check if content differs — skip if identical
               continue;
             }
