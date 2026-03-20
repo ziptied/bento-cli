@@ -108,9 +108,14 @@ describe("bento skills install", () => {
 
     // Verify it's a symlink pointing to canonical
     const stat = lstatSync(agentSkill);
+    // On non-Windows platforms a symlink is expected; on Windows a junction is used instead
     if (stat.isSymbolicLink()) {
       const linkTarget = resolve(dirname(agentSkill), readlinkSync(agentSkill));
       expect(linkTarget).toBe(resolve(tempDir, ".agents", "skills", "bento-cli"));
+    } else {
+      // Junction or copy on Windows — just verify the target directory is accessible
+      expect(existsSync(join(agentSkill, "SKILL.md"))).toBe(true);
+    }
     }
   });
 
