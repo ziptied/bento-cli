@@ -18,8 +18,12 @@ import {
 } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { output } from "../core/output";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 interface AgentConfig {
   name: string;

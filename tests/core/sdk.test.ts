@@ -698,11 +698,30 @@ describe("SDK wrapper methods", () => {
 
   describe("sequence operations", () => {
     it("getSequences returns sequence array", async () => {
-      const sequences = await client.getSequences();
+      const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "sequence-1",
+                type: "sequences",
+                attributes: { name: "Welcome", created_at: "2025-01-01T00:00:00Z", email_templates: [] },
+              },
+            ],
+            meta: { total: 1 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
 
-      expect(sequences).toHaveLength(1);
-      expect(sequences?.[0].id).toBe("sequence-1");
-      expect(mockSdk.V1.Sequences.getSequences).toHaveBeenCalled();
+      try {
+        const sequences = await client.getSequences();
+        expect(sequences).toHaveLength(1);
+        expect(sequences[0].id).toBe("sequence-1");
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
 
     it("createSequenceEmail uses SDK method when available", async () => {

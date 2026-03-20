@@ -499,11 +499,50 @@ export class BentoClient {
   // ============================================================
 
   /**
-   * List all workflows
+   * List all workflows (auto-paginates)
    */
   async getWorkflows(): Promise<Workflow[]> {
-    const sdk = await this.getClient();
-    return this.handleApiCall(() => sdk.V1.Workflows.getWorkflows());
+    const perPage = 100;
+    const maxPages = 200;
+    const workflows: Workflow[] = [];
+    const seenIds = new Set<string>();
+
+    type WorkflowListResponse = {
+      data?: Workflow[];
+      meta?: { total?: number; page?: number };
+    };
+
+    let page = 1;
+    let total: number | undefined;
+
+    while (page <= maxPages) {
+      const response = await this.apiGet<WorkflowListResponse | Workflow[]>(
+        "/fetch/workflows",
+        { page, per_page: perPage }
+      );
+
+      const data = Array.isArray(response) ? response : response.data ?? [];
+      const meta = Array.isArray(response) ? undefined : response.meta;
+
+      if (meta?.total !== undefined) {
+        total = meta.total;
+      }
+
+      if (data.length === 0) break;
+
+      for (const item of data) {
+        if (seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+        workflows.push(item);
+      }
+
+      if (total !== undefined && workflows.length >= total) break;
+      if (data.length < perPage) break;
+
+      page += 1;
+    }
+
+    return workflows;
   }
 
   // ============================================================
@@ -604,7 +643,7 @@ export class BentoClient {
    */
   async geolocate(ip: string): Promise<unknown> {
     const sdk = await this.getClient();
-    return this.handleApiCall(() => sdk.V1.Experimental.geolocate({ ip }));
+    return this.handleApiCall(() => sdk.V1.Experimental.geoLocateIP({ ip }));
   }
 
   /**
@@ -612,8 +651,8 @@ export class BentoClient {
    */
   async checkBlacklist(domain?: string, ip?: string): Promise<BlacklistResponse> {
     const sdk = await this.getClient();
-    const params = domain ? { domain } : { ip: ip! };
-    return this.handleApiCall(() => sdk.V1.Experimental.checkBlacklist(params));
+    const params = domain ? { domain } : { ipAddress: ip! };
+    return this.handleApiCall(() => sdk.V1.Experimental.getBlacklistStatus(params));
   }
 
   /**
@@ -725,11 +764,50 @@ export class BentoClient {
   // ============================================================
 
   /**
-   * List all sequences.
+   * List all sequences (auto-paginates)
    */
   async getSequences(): Promise<Sequence[]> {
-    const sdk = await this.getClient();
-    return this.handleApiCall(() => sdk.V1.Sequences.getSequences());
+    const perPage = 100;
+    const maxPages = 200;
+    const sequences: Sequence[] = [];
+    const seenIds = new Set<string>();
+
+    type SequenceListResponse = {
+      data?: Sequence[];
+      meta?: { total?: number; page?: number };
+    };
+
+    let page = 1;
+    let total: number | undefined;
+
+    while (page <= maxPages) {
+      const response = await this.apiGet<SequenceListResponse | Sequence[]>(
+        "/fetch/sequences",
+        { page, per_page: perPage }
+      );
+
+      const data = Array.isArray(response) ? response : response.data ?? [];
+      const meta = Array.isArray(response) ? undefined : response.meta;
+
+      if (meta?.total !== undefined) {
+        total = meta.total;
+      }
+
+      if (data.length === 0) break;
+
+      for (const item of data) {
+        if (seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+        sequences.push(item);
+      }
+
+      if (total !== undefined && sequences.length >= total) break;
+      if (data.length < perPage) break;
+
+      page += 1;
+    }
+
+    return sequences;
   }
 
   /**
