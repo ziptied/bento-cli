@@ -149,6 +149,7 @@ export function registerSkillsCommands(program: Command): void {
       if (skillName && !options.skill) {
         options.skill = skillName;
       }
+
       try {
         const sourceDir = getSkillsSourceDir();
         let skillNames = discoverSkills(sourceDir);
@@ -204,11 +205,9 @@ export function registerSkillsCommands(program: Command): void {
         for (const skill of skillNames) {
           const src = resolve(sourceDir, skill);
           const dest = resolve(CANONICAL_DIR, skill);
+
+          if (existsSync(dest)) {
             if (!options.force) {
-              // Already installed — skip without overwriting; use --force to refresh
-              continue;
-            }
-              // Check if content differs — skip if identical
               continue;
             }
             rmSync(dest, { recursive: true, force: true });
@@ -288,7 +287,6 @@ function getSkillsSourceDir(): string {
   for (let i = 0; i < 5; i++) {
     const candidate = resolve(dir, "skill");
     if (existsSync(candidate)) {
-      // Verify it has at least one skill subdirectory with SKILL.md
       const entries = readdirSync(candidate, { withFileTypes: true });
       const hasSkill = entries.some(
         (e) => e.isDirectory() && existsSync(resolve(candidate, e.name, "SKILL.md"))

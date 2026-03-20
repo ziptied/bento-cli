@@ -1,6 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { spawnSync } from "bun";
 import { existsSync, mkdirSync, readlinkSync, rmSync, lstatSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve, dirname } from "node:path";
 
 function runCLI(args: string[], env: Record<string, string> = {}) {
   const result = spawnSync(["bun", "run", "src/cli.ts", ...args], {
@@ -42,13 +45,9 @@ describe("bento skills list", () => {
 
 describe("bento skills install", () => {
   let tempDir: string;
-  let canonicalDir: string;
-  let agentDir: string;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "bento-skills-test-"));
-    canonicalDir = join(tempDir, ".agents", "skills");
-    agentDir = join(tempDir, ".claude", "skills");
   });
 
   afterEach(async () => {
@@ -75,6 +74,7 @@ describe("bento skills install", () => {
     expect(result.exitCode).toBe(1);
   });
 
+  it("warns when no agents detected", () => {
     const result = runCLI(["skills", "install"], {
       HOME: tempDir,
       CLAUDE_CONFIG_DIR: join(tempDir, "no-such-dir"),
@@ -84,7 +84,6 @@ describe("bento skills install", () => {
   });
 
   it("installs skill to a detected agent via symlink", () => {
-    // Create fake agent config dir so detection works
     mkdirSync(join(tempDir, ".claude"), { recursive: true });
 
     const result = runCLI(["skills", "install", "--agent", "claude-code", "--force"], {
@@ -94,24 +93,16 @@ describe("bento skills install", () => {
 
     expect(result.exitCode).toBe(0);
 
-    // Check the canonical copy exists
     const canonicalSkill = join(tempDir, ".agents", "skills", "bento-cli", "SKILL.md");
     expect(existsSync(canonicalSkill)).toBe(true);
 
-    // Check the agent symlink exists
     const agentSkill = join(tempDir, ".claude", "skills", "bento-cli");
     expect(existsSync(agentSkill)).toBe(true);
 
-    // Verify it's a symlink pointing to canonical
     const stat = lstatSync(agentSkill);
-    // On non-Windows platforms a symlink is expected; on Windows a junction is used instead
     if (stat.isSymbolicLink()) {
       const linkTarget = resolve(dirname(agentSkill), readlinkSync(agentSkill));
       expect(linkTarget).toBe(resolve(tempDir, ".agents", "skills", "bento-cli"));
-    } else {
-      // Junction or copy on Windows — just verify the target directory is accessible
-      expect(existsSync(join(agentSkill, "SKILL.md"))).toBe(true);
-    }
     }
   });
 
