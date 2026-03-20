@@ -75,11 +75,10 @@ describe("bento skills install", () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it("warns when no agents detected", () => {
-    // Use a HOME that has no agent config dirs
     const result = runCLI(["skills", "install"], {
       HOME: tempDir,
       CLAUDE_CONFIG_DIR: join(tempDir, "no-such-dir"),
+      CODEX_HOME: join(tempDir, "no-such-codex"),
     });
     expect(result.stderr).toContain("No supported AI agents detected");
   });
