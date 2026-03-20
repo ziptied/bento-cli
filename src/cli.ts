@@ -11,6 +11,7 @@ import { registerFieldsCommands } from "./commands/fields";
 import { registerFormsCommands } from "./commands/forms";
 import { registerProfileCommands } from "./commands/profile";
 import { registerSequencesCommands } from "./commands/sequences";
+import { registerSkillsCommands } from "./commands/skills";
 import { registerStatsCommands } from "./commands/stats";
 import { registerSubscribersCommands } from "./commands/subscribers";
 import { registerTagsCommands } from "./commands/tags";
@@ -64,6 +65,7 @@ registerWorkflowsCommands(program);
 registerTemplatesCommands(program);
 registerFormsCommands(program);
 registerExperimentalCommands(program);
+registerSkillsCommands(program);
 registerDashboardCommand(program);
 
 // Future commands to be implemented:
