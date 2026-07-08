@@ -674,6 +674,91 @@ describe("SDK wrapper methods", () => {
     });
   });
 
+  describe("sequence operations", () => {
+    beforeEach(() => {
+      mockSdk.V1.Sequences = {
+        getSequences: mock(({ page }: { page?: number } = {}) =>
+          Promise.resolve([
+            {
+              id: "seq_999",
+              type: "sequence",
+              attributes: {
+                name: "Welcome Flow",
+                created_at: "2025-01-01T00:00:00Z",
+                email_templates: [],
+              },
+            },
+          ])
+        ),
+        createSequenceEmail: mock(() =>
+          Promise.resolve({
+            id: 4321,
+            type: "email_template",
+            attributes: { subject: "Welcome", html: "<p>Hi</p>" },
+          })
+        ),
+      };
+      mockSdk.V1.EmailTemplates = {
+        updateEmailTemplate: mock(() =>
+          Promise.resolve({
+            id: 12345,
+            type: "email_template",
+            attributes: { subject: "Updated", html: "<p>Updated</p>" },
+          })
+        ),
+      };
+    });
+
+    it("createSequenceEmail sends snake_case payload to SDK", async () => {
+      const result = await client.createSequenceEmail("999", {
+        subject: "Welcome",
+        html: "<p>Hi</p>",
+        inboxSnippet: "Preview",
+        delayInterval: "days",
+        delayCount: 2,
+      });
+
+      expect(result?.id).toBe(4321);
+      expect(mockSdk.V1.Sequences.createSequenceEmail).toHaveBeenCalledWith(
+        "999",
+        {
+          subject: "Welcome",
+          html: "<p>Hi</p>",
+          inbox_snippet: "Preview",
+          delay_interval: "days",
+          delay_interval_count: 2,
+          editor_choice: undefined,
+          cc: undefined,
+          bcc: undefined,
+          to: undefined,
+        }
+      );
+    });
+
+    it("resolveSequenceIdForEmail resolves exact sequence name to list response ID", async () => {
+      const sequenceId = await client.resolveSequenceIdForEmail({
+        sequenceName: "welcome flow",
+      });
+
+      expect(sequenceId).toBe("seq_999");
+      expect(mockSdk.V1.Sequences.getSequences).toHaveBeenCalledWith();
+    });
+
+    it("updateSequenceEmail patches template by numeric ID", async () => {
+      const result = await client.updateSequenceEmail("12345", {
+        subject: "Updated",
+        html: "<p>Updated</p>",
+      });
+
+      expect(result?.id).toBe(12345);
+      expect(mockSdk.V1.EmailTemplates.updateEmailTemplate).toHaveBeenCalledWith({
+        id: 12345,
+        subject: "Updated",
+        html: "<p>Updated</p>",
+      });
+    });
+  });
+
   describe("error propagation", () => {
     it("propagates errors through handleApiCall", async () => {
       mockSdk.V1.Tags.getTags = mock(() =>

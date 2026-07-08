@@ -39,6 +39,26 @@ export type {
   CreateBroadcastInput,
 } from "@bentonow/bento-node-sdk/src/sdk/broadcasts/types";
 
+export interface BroadcastCreateFailure {
+  index?: number;
+  name?: string;
+  error?: string;
+}
+
+export interface BroadcastCreateRecord {
+  id?: string | number;
+  template_id?: string | number;
+  name?: string;
+  dashboard_url?: string;
+}
+
+export interface BroadcastCreateResult {
+  results: number;
+  broadcasts: BroadcastCreateRecord[];
+  failed: number;
+  failures: BroadcastCreateFailure[];
+}
+
 // Sequence and email template types
 export type {
   Sequence,
@@ -125,6 +145,13 @@ export interface ImportResult {
   imported: number;
   failed?: number;
 }
+
+export type SequenceListEntry = Sequence & {
+  attributes: SequenceAttributes & {
+    prefix_id?: string;
+    id?: string;
+  };
+};
 
 export type SequenceDelayInterval = "minutes" | "hours" | "days" | "months";
 

@@ -8,17 +8,19 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Command } from "commander";
-import { bento, CLIError } from "../core/sdk";
+import type { Command } from "commander";
 import { output } from "../core/output";
+import { CLIError, bento } from "../core/sdk";
 import type {
   CreateSequenceEmailInput,
   SequenceDelayInterval,
   UpdateSequenceEmailInput,
 } from "../types/sdk";
+import { getSequenceId } from "../utils/sequence-identity";
 
 interface CreateEmailOptions {
-  sequenceId: string;
+  sequenceId?: string;
+  sequenceName?: string;
   subject: string;
   html?: string;
   htmlFile?: string;
@@ -69,7 +71,7 @@ export function registerSequencesCommands(program: Command): void {
         }
 
         const rows = result.map((sequence) => ({
-          id: sequence.id,
+          sequenceId: getSequenceId(sequence) ?? "—",
           name: sequence.attributes.name,
           emails: sequence.attributes.email_templates.length,
           created: formatDate(sequence.attributes.created_at),
@@ -77,7 +79,7 @@ export function registerSequencesCommands(program: Command): void {
 
         output.table(rows, {
           columns: [
-            { key: "id", header: "ID" },
+            { key: "sequenceId", header: "SEQUENCE ID" },
             { key: "name", header: "NAME" },
             { key: "emails", header: "EMAILS" },
             { key: "created", header: "CREATED" },
@@ -92,8 +94,9 @@ export function registerSequencesCommands(program: Command): void {
 
   sequences
     .command("create-email")
-    .description("Create an email template in a sequence")
-    .requiredOption("--sequence-id <id>", "Sequence ID (e.g. sequence_abc123)")
+    .description("Append a new email template to a sequence")
+    .option("--sequence-id <id>", "Sequence ID from 'bento sequences list'")
+    .option("--sequence-name <name>", "Sequence name (exact match, case-insensitive)")
     .requiredOption("--subject <subject>", "Email subject line")
     .option("--html <html>", "Email HTML content")
     .option("--html-file <path>", "Path to an HTML file")
@@ -106,7 +109,10 @@ export function registerSequencesCommands(program: Command): void {
     .option("--to <to>", "Recipient value (supports Liquid)")
     .action(async (options: CreateEmailOptions) => {
       try {
-        validateSequenceId(options.sequenceId);
+        const sequenceId = await bento.resolveSequenceIdForEmail({
+          sequenceId: options.sequenceId,
+          sequenceName: options.sequenceName,
+        });
         const html = await resolveHtmlInput(options.html, options.htmlFile);
         validateDelayOptions(options.delayInterval, options.delayCount);
 
@@ -123,7 +129,7 @@ export function registerSequencesCommands(program: Command): void {
         };
 
         output.startSpinner("Creating sequence email...");
-        const result = await bento.createSequenceEmail(options.sequenceId, input);
+        const result = await bento.createSequenceEmail(sequenceId, input);
         output.stopSpinner("Sequence email created");
 
         if (output.isJson()) {
@@ -138,9 +144,9 @@ export function registerSequencesCommands(program: Command): void {
 
         const templateId = result?.id;
         if (templateId) {
-          output.success(`Created email ${templateId} in sequence ${options.sequenceId}`);
+          output.success(`Created email ${templateId} in sequence ${sequenceId}`);
         } else {
-          output.success(`Created email in sequence ${options.sequenceId}`);
+          output.success(`Created email in sequence ${sequenceId}`);
         }
       } catch (error) {
         output.failSpinner();
@@ -150,7 +156,7 @@ export function registerSequencesCommands(program: Command): void {
 
   sequences
     .command("update-email")
-    .description("Update an existing sequence email template by template ID")
+    .description("Patch an existing sequence email template by template ID")
     .requiredOption("--template-id <id>", "Email template ID (e.g. 12345)")
     .option("--subject <subject>", "New email subject line")
     .option("--html <html>", "New email HTML content")
@@ -198,11 +204,7 @@ async function resolveHtmlInput(html?: string, htmlFile?: string): Promise<strin
   const hasHtmlFile = Boolean(htmlFile);
 
   if (hasInlineHtml === hasHtmlFile) {
-    throw new CLIError(
-      "Provide exactly one of --html or --html-file.",
-      "VALIDATION_ERROR",
-      422
-    );
+    throw new CLIError("Provide exactly one of --html or --html-file.", "VALIDATION_ERROR", 422);
   }
 
   if (html) {
@@ -222,7 +224,11 @@ async function resolveHtmlInput(html?: string, htmlFile?: string): Promise<strin
         throw new CLIError(`HTML file not found: ${htmlFile}`, "VALIDATION_ERROR", 422);
       }
       if (code === "EACCES") {
-        throw new CLIError(`Cannot read HTML file (permission denied): ${htmlFile}`, "VALIDATION_ERROR", 422);
+        throw new CLIError(
+          `Cannot read HTML file (permission denied): ${htmlFile}`,
+          "VALIDATION_ERROR",
+          422
+        );
       }
     }
     throw new CLIError(`Unable to read HTML file: ${htmlFile}`, "VALIDATION_ERROR", 422);
@@ -279,22 +285,11 @@ function validateHtmlSize(html: string): void {
   }
 }
 
-function validateSequenceId(sequenceId: string): void {
-  if (!/^sequence_[a-zA-Z0-9_-]+$/.test(sequenceId)) {
-    throw new CLIError(
-      "Sequence ID must be a valid prefix_id (e.g. sequence_abc123).",
-      "VALIDATION_ERROR",
-      422
-    );
-  }
-}
-
 function resolveSafeHtmlPath(inputPath: string): string {
   const resolvedPath = path.resolve(inputPath);
   const projectRoot = process.cwd();
   const relativePath = path.relative(projectRoot, resolvedPath);
-  const isOutsideProject =
-    relativePath.startsWith("..") || path.isAbsolute(relativePath);
+  const isOutsideProject = relativePath.startsWith("..") || path.isAbsolute(relativePath);
 
   if (isOutsideProject) {
     throw new CLIError(

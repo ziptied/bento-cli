@@ -244,15 +244,28 @@ export function registerBroadcastsCommands(program: Command): void {
         const result = await bento.createBroadcast(input);
         output.stopSpinner("Broadcast created");
 
+        if (result.failed > 0) {
+          const failureSummary = result.failures
+            .map((failure) => failure.error ?? "Unknown error")
+            .join("; ");
+          output.error(
+            failureSummary
+              ? `Broadcast creation failed: ${failureSummary}`
+              : "Broadcast creation failed."
+          );
+          process.exit(1);
+        }
+
         if (output.isJson()) {
           output.json({
-            success: true,
+            success: result.results > 0,
             error: null,
             data: result,
-            meta: { count: result.length },
+            meta: { count: result.results, failed: result.failed },
           });
         } else if (!output.isQuiet()) {
-          output.success(`Created broadcast "${options.name}"`);
+          const createdName = result.broadcasts[0]?.name ?? options.name;
+          output.success(`Created broadcast "${createdName}"`);
           output.info("Edit and send this broadcast from the Bento web dashboard.");
         }
       } catch (error) {

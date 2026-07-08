@@ -7,10 +7,10 @@
  * - bento tags delete <name> - Delete a tag (dangerous, requires confirmation)
  */
 
-import { Command } from "commander";
-import { bento, CLIError } from "../core/sdk";
+import type { Command } from "commander";
 import { output } from "../core/output";
 import { safety } from "../core/safety";
+import { CLIError, bento } from "../core/sdk";
 import { filterBySearch } from "../utils/search";
 
 export function registerTagsCommands(program: Command): void {
@@ -152,18 +152,22 @@ export function registerTagsCommands(program: Command): void {
       output.startSpinner(`Deleting tag "${trimmedName}"...`);
 
       try {
-        // Note: The Bento SDK doesn't have a direct deleteTag method
-        // This would need to be implemented if the API supports it
-        // For now, we throw a clear error message
-        output.failSpinner();
-        output.error(
-          "Tag deletion is not currently supported by the Bento API. " +
-            "Please delete tags through the Bento dashboard."
-        );
-        process.exit(1);
+        const result = await bento.deleteTag(trimmedName);
+        output.stopSpinner();
+
+        if (output.isJson()) {
+          output.json({
+            success: true,
+            error: null,
+            data: result,
+            meta: { count: 1 },
+          });
+        } else {
+          output.success(result.message || `Tag "${trimmedName}" deleted`);
+        }
       } catch (error) {
         output.failSpinner();
-        handleError(error);
+        handleError(error, trimmedName);
       }
     });
 }

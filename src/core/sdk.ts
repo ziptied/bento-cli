@@ -20,16 +20,16 @@ import type { BentoProfile } from "../types/config";
 import type {
   AddFieldParams,
   Broadcast,
+  BroadcastCreateResult,
   CreateBroadcastInput,
+  CreateSequenceEmailInput,
+  EmailTemplate,
   Field,
   GetSubscriberParams,
   ImportResult,
   ImportSubscribersParams,
   SDKErrorCode,
   Sequence,
-  EmailTemplate,
-  CreateSequenceEmailInput,
-  UpdateSequenceEmailInput,
   SiteStats,
   Subscriber,
   SubscriberSearchParams,
@@ -37,7 +37,13 @@ import type {
   Tag,
   TagSubscriberParams,
   TrackEventParams,
+  UpdateSequenceEmailInput,
 } from "../types/sdk";
+import {
+  type ResolveSequenceIdResult,
+  isSequenceId,
+  resolveSequenceId,
+} from "../utils/sequence-identity";
 import { config } from "./config";
 
 /**
@@ -142,12 +148,23 @@ export class BentoClient {
 
       if (error instanceof Error) {
         const msg = error.message.toLowerCase();
-        if (msg.includes("401") || msg.includes("unauthorized") || msg.includes("403") || msg.includes("forbidden")) {
+        if (
+          msg.includes("401") ||
+          msg.includes("unauthorized") ||
+          msg.includes("403") ||
+          msg.includes("forbidden")
+        ) {
           return false;
         }
 
         // Server errors, timeouts, network failures → rethrow so caller can inform the user
-        if (msg.includes("500") || msg.includes("timeout") || msg.includes("econnrefused") || msg.includes("enotfound") || msg.includes("fetch failed")) {
+        if (
+          msg.includes("500") ||
+          msg.includes("timeout") ||
+          msg.includes("econnrefused") ||
+          msg.includes("enotfound") ||
+          msg.includes("fetch failed")
+        ) {
           throw new CLIError(
             "Could not reach the Bento API to validate credentials. The service may be temporarily unavailable — please try again.",
             "API_ERROR"
@@ -205,10 +222,7 @@ export class BentoClient {
 
   async searchSubscribers(params: SubscriberSearchParams): Promise<SubscriberSearchResult> {
     if (!params.email && !params.uuid) {
-      throw new CLIError(
-        "Provide --email or --uuid to look up a subscriber.",
-        "VALIDATION_ERROR"
-      );
+      throw new CLIError("Provide --email or --uuid to look up a subscriber.", "VALIDATION_ERROR");
     }
 
     const subscriber = await this.getSubscriber({
@@ -302,8 +316,34 @@ export class BentoClient {
   }
 
   /**
-   * Tag a subscriber (TRIGGERS automations)
+   * Delete a tag by name (looks up tag id from list-tags first).
    */
+  async deleteTag(name: string): Promise<{ message: string }> {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      throw new CLIError("Tag name cannot be empty.", "VALIDATION_ERROR", 422);
+    }
+
+    const tags = await this.getTags();
+    const match = tags?.find(
+      (tag) => tag.attributes.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+
+    if (!match?.id) {
+      throw new CLIError(
+        `Tag "${trimmedName}" not found. Run 'bento tags list' to inspect available tags.`,
+        "NOT_FOUND",
+        404
+      );
+    }
+
+    return this.handleApiCall(() =>
+      this.apiDelete<{ message: string }>(`/fetch/tags/${encodeURIComponent(match.id)}`, {
+        tag: { name: trimmedName },
+      })
+    );
+  }
+
   async tagSubscriber(params: TagSubscriberParams): Promise<boolean> {
     const sdk = await this.getClient();
     return this.handleApiCall(() =>
@@ -462,12 +502,12 @@ export class BentoClient {
       meta?: { total?: number; count?: number; page?: number; per_page?: number };
     };
 
-    const response = await this.apiGet<BroadcastListResponse | Broadcast[]>(
-      "/fetch/broadcasts",
-      { page, per_page: perPage }
-    );
+    const response = await this.apiGet<BroadcastListResponse | Broadcast[]>("/fetch/broadcasts", {
+      page,
+      per_page: perPage,
+    });
 
-    const data = Array.isArray(response) ? response : response.data ?? [];
+    const data = Array.isArray(response) ? response : (response.data ?? []);
     const meta = Array.isArray(response) ? undefined : response.meta;
     const total = meta?.total;
     const hasMore = total !== undefined ? page * perPage < total : data.length >= perPage;
@@ -493,15 +533,12 @@ export class BentoClient {
     let total: number | undefined;
 
     while (page <= maxPages) {
-      const response = await this.apiGet<BroadcastListResponse | Broadcast[]>(
-        "/fetch/broadcasts",
-        {
-          page,
-          per_page: perPage,
-        }
-      );
+      const response = await this.apiGet<BroadcastListResponse | Broadcast[]>("/fetch/broadcasts", {
+        page,
+        per_page: perPage,
+      });
 
-      const data = Array.isArray(response) ? response : response.data ?? [];
+      const data = Array.isArray(response) ? response : (response.data ?? []);
       const meta = Array.isArray(response) ? undefined : response.meta;
 
       if (meta?.total !== undefined) {
@@ -537,9 +574,14 @@ export class BentoClient {
   /**
    * Create a new broadcast (draft)
    */
-  async createBroadcast(input: CreateBroadcastInput): Promise<Broadcast[]> {
-    const sdk = await this.getClient();
-    return this.handleApiCall(() => sdk.V1.Broadcasts.createBroadcast([input]));
+  async createBroadcast(input: CreateBroadcastInput): Promise<BroadcastCreateResult> {
+    const raw = await this.handleApiCall(() =>
+      this.apiPost<unknown>("/batch/broadcasts", {
+        broadcasts: [input],
+      })
+    );
+
+    return normalizeBroadcastCreateResult(raw);
   }
 
   // ============================================================
@@ -555,14 +597,53 @@ export class BentoClient {
   }
 
   /**
+   * Resolve a sequence ID from an explicit ID or exact name match.
+   */
+  async resolveSequenceIdForEmail(input: {
+    sequenceId?: string;
+    sequenceName?: string;
+  }): Promise<string> {
+    const normalizedSequenceId = input.sequenceId?.trim();
+    const normalizedSequenceName = input.sequenceName?.trim();
+
+    if (!normalizedSequenceId && !normalizedSequenceName) {
+      throw new CLIError(
+        "Provide either --sequence-id or --sequence-name.",
+        "VALIDATION_ERROR",
+        422
+      );
+    }
+
+    if (normalizedSequenceId && normalizedSequenceName) {
+      throw new CLIError(
+        "Provide only one of --sequence-id or --sequence-name.",
+        "VALIDATION_ERROR",
+        422
+      );
+    }
+
+    const result: ResolveSequenceIdResult = await resolveSequenceId({
+      sequenceId: normalizedSequenceId,
+      sequenceName: normalizedSequenceName,
+      getSequences: async () => this.getSequences(),
+    });
+
+    return this.toResolvedSequenceId(result, normalizedSequenceName);
+  }
+
+  /**
    * Create an email template in a sequence.
    */
   async createSequenceEmail(
     sequenceId: string,
     input: CreateSequenceEmailInput
   ): Promise<EmailTemplate | null> {
-    if (!/^sequence_[a-zA-Z0-9_-]+$/.test(sequenceId)) {
-      throw new CLIError("Sequence ID must be a valid prefix_id.", "VALIDATION_ERROR", 422);
+    if (!isSequenceId(sequenceId)) {
+      throw new CLIError(
+        "Sequence ID must be the non-empty id returned by 'bento sequences list'.",
+        "VALIDATION_ERROR",
+        422
+      );
     }
 
     const sdk = await this.getClient();
@@ -579,11 +660,15 @@ export class BentoClient {
     };
 
     const sequencesApi = sdk.V1.Sequences as {
-      createSequenceEmail?: (id: string, parameters: Record<string, unknown>) => Promise<EmailTemplate | null>;
+      createSequenceEmail?: (
+        id: string,
+        parameters: Record<string, unknown>
+      ) => Promise<EmailTemplate | null>;
     };
 
-    if (typeof sequencesApi.createSequenceEmail === "function") {
-      return this.handleApiCall(() => sequencesApi.createSequenceEmail!(sequenceId, payload));
+    const createSequenceEmail = sequencesApi.createSequenceEmail;
+    if (typeof createSequenceEmail === "function") {
+      return this.handleApiCall(() => createSequenceEmail(sequenceId, payload));
     }
 
     // Backward-compatible fallback for SDK versions that don't expose createSequenceEmail yet.
@@ -623,6 +708,36 @@ export class BentoClient {
     if (input.html !== undefined) payload.html = input.html;
 
     return this.handleApiCall(() => sdk.V1.EmailTemplates.updateEmailTemplate(payload));
+  }
+
+  private toResolvedSequenceId(result: ResolveSequenceIdResult, sequenceName?: string): string {
+    if (result.ok) {
+      return result.sequenceId;
+    }
+
+    if (result.reason === "missing_input") {
+      throw new CLIError(
+        "Provide either --sequence-id or --sequence-name.",
+        "VALIDATION_ERROR",
+        422
+      );
+    }
+
+    if (result.reason === "not_found") {
+      const label = sequenceName ?? result.sequenceName ?? "sequence";
+      throw new CLIError(
+        `Sequence "${label}" not found. Run 'bento sequences list --json' to inspect available sequences.`,
+        "NOT_FOUND",
+        404
+      );
+    }
+
+    const label = sequenceName ?? result.sequenceName ?? "sequence";
+    throw new CLIError(
+      `Sequence "${label}" was found but the API response did not include an id. Run 'bento sequences list --json' and use --sequence-id with the listed id.`,
+      "VALIDATION_ERROR",
+      422
+    );
   }
 
   // ============================================================
@@ -762,6 +877,35 @@ export class BentoClient {
     }
   }
 
+  private async apiDelete<T>(path: string, payload: Record<string, unknown>): Promise<T> {
+    const profile = await this.ensureProfileLoaded();
+    const url = new URL(`${this.apiBaseUrl}${path}`);
+    const body = {
+      ...payload,
+      site_uuid: profile.siteUuid,
+    };
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        ...this.buildAuthHeaders(profile),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const bodyText = await response.text();
+      throw this.createHttpError(response.status, bodyText || response.statusText);
+    }
+
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new CLIError("Invalid JSON response from Bento API.", "API_ERROR", response.status);
+    }
+  }
+
   private async apiPost<T>(path: string, payload: Record<string, unknown>): Promise<T> {
     const profile = await this.ensureProfileLoaded();
     const url = new URL(`${this.apiBaseUrl}${path}`);
@@ -833,20 +977,16 @@ export class BentoClient {
             status
           );
         }
-        return new CLIError(
-          `Request failed (${status}): ${message}`,
-          "UNKNOWN",
-          status
-        );
+        return new CLIError(`Request failed (${status}): ${message}`, "UNKNOWN", status);
     }
   }
 
   private static validateApiBaseUrl(baseUrl: string): string {
     try {
       const parsed = new URL(baseUrl);
-      const isLocalHost =
-        parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-      const isBentoHost = parsed.hostname.endsWith(".bentonow.com") || parsed.hostname === "bentonow.com";
+      const isLocalHost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      const isBentoHost =
+        parsed.hostname.endsWith(".bentonow.com") || parsed.hostname === "bentonow.com";
       const hasAllowedProtocol =
         parsed.protocol === "https:" || (isLocalHost && parsed.protocol === "http:");
 
@@ -863,6 +1003,58 @@ export class BentoClient {
       );
     }
   }
+}
+
+function normalizeBroadcastCreateResult(raw: unknown): BroadcastCreateResult {
+  if (!raw || typeof raw !== "object") {
+    return { results: 0, broadcasts: [], failed: 0, failures: [] };
+  }
+
+  const response = raw as {
+    results?: unknown;
+    broadcasts?: unknown;
+    failed?: unknown;
+    failures?: unknown;
+    data?: unknown;
+  };
+
+  if (
+    "results" in response ||
+    "broadcasts" in response ||
+    "failed" in response ||
+    "failures" in response
+  ) {
+    return {
+      results: typeof response.results === "number" ? response.results : 0,
+      broadcasts: Array.isArray(response.broadcasts)
+        ? (response.broadcasts as BroadcastCreateResult["broadcasts"])
+        : [],
+      failed: typeof response.failed === "number" ? response.failed : 0,
+      failures: Array.isArray(response.failures)
+        ? (response.failures as BroadcastCreateResult["failures"])
+        : [],
+    };
+  }
+
+  if (Array.isArray(response.data)) {
+    return {
+      results: response.data.length,
+      broadcasts: response.data as BroadcastCreateResult["broadcasts"],
+      failed: 0,
+      failures: [],
+    };
+  }
+
+  if (Array.isArray(raw)) {
+    return {
+      results: raw.length,
+      broadcasts: raw as BroadcastCreateResult["broadcasts"],
+      failed: 0,
+      failures: [],
+    };
+  }
+
+  return { results: 0, broadcasts: [], failed: 0, failures: [] };
 }
 
 // Singleton instance for normal usage

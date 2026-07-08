@@ -205,7 +205,7 @@ bento sequences list
 
 # Create a sequence email with inline HTML
 bento sequences create-email \
-  --sequence-id sequence_abc123 \
+  --sequence-id 123 \
   --subject "Welcome to Bento" \
   --html "<h1>Hi there</h1>" \
   --delay-interval days \
@@ -213,7 +213,7 @@ bento sequences create-email \
 
 # Create from an HTML file
 bento sequences create-email \
-  --sequence-id sequence_abc123 \
+  --sequence-id 123 \
   --subject "Day 2 follow-up" \
   --html-file ./emails/day-2.html
 

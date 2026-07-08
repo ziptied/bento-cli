@@ -1,16 +1,17 @@
-import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { spawnSync } from "bun";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "bun";
+import { Command } from "commander";
+import { registerTagsCommands } from "../../commands/tags";
+import { output } from "../../core/output";
+import { bento } from "../../core/sdk";
 
 /**
  * Helper to run CLI commands with a custom config path
  */
-function runCLI(
-  args: string[],
-  options: { configPath?: string; input?: string } = {}
-) {
+function runCLI(args: string[], options: { configPath?: string; input?: string } = {}) {
   const env: Record<string, string> = {
     ...process.env,
     BENTO_API_KEY: "test-api-key",
@@ -31,6 +32,13 @@ function runCLI(
     stderr: result.stderr.toString(),
     exitCode: result.exitCode,
   };
+}
+
+function buildProgram(): Command {
+  const program = new Command();
+  program.exitOverride();
+  registerTagsCommands(program);
+  return program;
 }
 
 describe("bento tags", () => {
@@ -76,10 +84,7 @@ describe("bento tags list", () => {
   });
 
   it("requires authentication", async () => {
-    await writeFile(
-      configPath,
-      JSON.stringify({ version: 1, current: null, profiles: {} })
-    );
+    await writeFile(configPath, JSON.stringify({ version: 1, current: null, profiles: {} }));
 
     const result = runCLI(["tags", "list"], { configPath });
     expect(result.stderr).toContain("Not authenticated");
@@ -87,10 +92,7 @@ describe("bento tags list", () => {
   });
 
   it("outputs JSON with --json flag when not authenticated", async () => {
-    await writeFile(
-      configPath,
-      JSON.stringify({ version: 1, current: null, profiles: {} })
-    );
+    await writeFile(configPath, JSON.stringify({ version: 1, current: null, profiles: {} }));
 
     const result = runCLI(["tags", "list", "--json"], { configPath });
     expect(result.stderr).toContain("Not authenticated");
@@ -141,10 +143,7 @@ describe("bento tags create", () => {
   });
 
   it("requires authentication", async () => {
-    await writeFile(
-      configPath,
-      JSON.stringify({ version: 1, current: null, profiles: {} })
-    );
+    await writeFile(configPath, JSON.stringify({ version: 1, current: null, profiles: {} }));
 
     const result = runCLI(["tags", "create", "newsletter"], { configPath });
     expect(result.stderr).toContain("Not authenticated");
@@ -162,6 +161,7 @@ describe("bento tags delete", () => {
   });
 
   afterEach(async () => {
+    output.reset();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -219,7 +219,7 @@ describe("bento tags delete", () => {
     expect(result.stderr).toContain("--confirm");
   });
 
-  it("shows API limitation message with --confirm flag", async () => {
+  it("deletes a tag with --confirm flag", async () => {
     await writeFile(
       configPath,
       JSON.stringify({
@@ -237,9 +237,21 @@ describe("bento tags delete", () => {
       })
     );
 
-    const result = runCLI(["tags", "delete", "old-tag", "--confirm"], { configPath });
-    expect(result.stderr).toContain("not currently supported");
-    expect(result.exitCode).toBe(1);
+    const deleteSpy = spyOn(bento, "deleteTag").mockResolvedValue({
+      message: "Tag (old-tag) deleted successfully",
+    });
+    const successSpy = spyOn(output, "success").mockImplementation(() => {});
+
+    output.setInteractiveOverride(false);
+
+    const program = buildProgram();
+    await program.parseAsync(["node", "test", "tags", "delete", "old-tag", "--confirm"]);
+
+    expect(deleteSpy).toHaveBeenCalledWith("old-tag");
+    expect(successSpy).toHaveBeenCalledWith("Tag (old-tag) deleted successfully");
+
+    deleteSpy.mockRestore();
+    successSpy.mockRestore();
   });
 
   it("outputs JSON when cancelled with --json flag (non-interactive)", async () => {
