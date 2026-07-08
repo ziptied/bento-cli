@@ -59,12 +59,44 @@ export interface BroadcastCreateResult {
   failures: BroadcastCreateFailure[];
 }
 
-// Sequence and email template types
+// Sequence types
 export type {
   Sequence,
   SequenceAttributes,
+  SequenceEmailTemplate,
 } from "@bentonow/bento-node-sdk/src/sdk/sequences/types";
+
+// Email template types
 export type { EmailTemplate } from "@bentonow/bento-node-sdk/src/sdk/email-templates/types";
+
+// Workflow types
+export type {
+  Workflow,
+  WorkflowAttributes,
+} from "@bentonow/bento-node-sdk/src/sdk/workflows/types";
+
+// Form types
+export type {
+  FormResponse,
+  FormResponseAttributes,
+} from "@bentonow/bento-node-sdk/src/sdk/forms/types";
+
+// Experimental types
+export type {
+  GuessGenderResponse,
+  BlacklistResponse,
+  ContentModerationResult,
+} from "@bentonow/bento-node-sdk/src/sdk/experimental/types";
+
+// Batch/transactional types
+export type { TransactionalEmail } from "@bentonow/bento-node-sdk/src/sdk/batch/types";
+
+// Purchase types
+export type {
+  PurchaseDetails,
+  PurchaseCart,
+  PurchaseItem,
+} from "@bentonow/bento-node-sdk/src/sdk/batch/events";
 
 // Base entity type
 export type { BaseEntity } from "@bentonow/bento-node-sdk/src/sdk/types";

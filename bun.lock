@@ -5,7 +5,7 @@
     "": {
       "name": "@bentonow/bento-cli",
       "dependencies": {
-        "@bentonow/bento-node-sdk": "1.1.0",
+        "@bentonow/bento-node-sdk": "2.0.0",
         "@inquirer/prompts": "8.2.0",
         "chalk": "5.6.2",
         "commander": "^12.1.0",
@@ -21,7 +21,7 @@
     },
   },
   "packages": {
-    "@bentonow/bento-node-sdk": ["@bentonow/bento-node-sdk@1.1.0", "", {}, "sha512-i0pfRgMnGid+o0NkMAmG30KOJnXEMSg6r3o+NT0IVCx7GkuI17d21YeJjvlA/hNhNz+p3rhG0fqh9nYSJVUuIw=="],
+    "@bentonow/bento-node-sdk": ["@bentonow/bento-node-sdk@2.0.0", "", {}, "sha512-uFqyos3IZ5ITK0g3cdeRpGtC3B23UJQdwspqgIiSXcN5isVqSLa2cNUvOWClE24GOtlNhas5nNx5EWk3q7sx9A=="],
 
     "@biomejs/biome": ["@biomejs/biome@1.9.4", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "1.9.4", "@biomejs/cli-darwin-x64": "1.9.4", "@biomejs/cli-linux-arm64": "1.9.4", "@biomejs/cli-linux-arm64-musl": "1.9.4", "@biomejs/cli-linux-x64": "1.9.4", "@biomejs/cli-linux-x64-musl": "1.9.4", "@biomejs/cli-win32-arm64": "1.9.4", "@biomejs/cli-win32-x64": "1.9.4" }, "bin": { "biome": "bin/biome" } }, "sha512-1rkd7G70+o9KkTn5KLmDYXihGoTaIGO9PIIN2ZB7UJxFrWw04CZHPYiMRjYsaDvVV7hP1dYNRLxSANLaBFGpog=="],
 

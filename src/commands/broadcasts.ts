@@ -6,9 +6,9 @@
  * - bento broadcasts create --name <n> --subject <s> [options] - Create a new broadcast draft
  */
 
-import { Command } from "commander";
-import { bento, CLIError } from "../core/sdk";
+import type { Command } from "commander";
 import { output } from "../core/output";
+import { CLIError, bento } from "../core/sdk";
 import type { Broadcast, BroadcastType, CreateBroadcastInput } from "../types/sdk";
 
 interface ListOptions {
@@ -29,9 +29,7 @@ interface CreateOptions {
 }
 
 export function registerBroadcastsCommands(program: Command): void {
-  const broadcasts = program
-    .command("broadcasts")
-    .description("Manage email broadcasts");
+  const broadcasts = program.command("broadcasts").description("Manage email broadcasts");
 
   broadcasts
     .command("list")
@@ -118,7 +116,13 @@ export function registerBroadcastsCommands(program: Command): void {
                 success: true,
                 error: null,
                 data: [],
-                meta: { count: 0, page, pageSize: perPage, total: result.total ?? 0, hasMore: false },
+                meta: {
+                  count: 0,
+                  page,
+                  pageSize: perPage,
+                  total: result.total ?? 0,
+                  hasMore: false,
+                },
               });
             } else {
               output.info("No broadcasts found.");
@@ -148,7 +152,9 @@ export function registerBroadcastsCommands(program: Command): void {
             if (!output.isQuiet()) {
               const totalText = typeof result.total === "number" ? ` of ${result.total}` : "";
               const moreText = result.hasMore ? " (more available)" : "";
-              output.info(`Page ${page}, showing ${result.broadcasts.length}${totalText}${moreText}`);
+              output.info(
+                `Page ${page}, showing ${result.broadcasts.length}${totalText}${moreText}`
+              );
             }
           }
         } else {
@@ -212,8 +218,8 @@ export function registerBroadcastsCommands(program: Command): void {
         }
 
         // Parse batch size
-        const batchSize = parseInt(options.batchSize || "1000", 10);
-        if (isNaN(batchSize) || batchSize < 1) {
+        const batchSize = Number.parseInt(options.batchSize || "1000", 10);
+        if (Number.isNaN(batchSize) || batchSize < 1) {
           output.error("Batch size must be a positive number.");
           process.exit(1);
         }
@@ -286,7 +292,9 @@ function broadcastsToRows(broadcasts: Broadcast[]) {
   return broadcasts.map((b) => {
     const attrs = b.attributes as Record<string, unknown>;
     const template = attrs.template as { subject?: string } | undefined;
-    const stats = attrs.stats as { recipients?: number; total_opens?: number; total_clicks?: number } | undefined;
+    const stats = attrs.stats as
+      | { recipients?: number; total_opens?: number; total_clicks?: number }
+      | undefined;
 
     return {
       name: attrs.name as string,

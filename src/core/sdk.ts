@@ -19,16 +19,23 @@ import {
 import type { BentoProfile } from "../types/config";
 import type {
   AddFieldParams,
+  BlacklistResponse,
   Broadcast,
   BroadcastCreateResult,
+  ContentModerationResult,
   CreateBroadcastInput,
   CreateSequenceEmailInput,
   EmailTemplate,
   Field,
+  FormResponse,
   GetSubscriberParams,
+  GuessGenderResponse,
   ImportResult,
   ImportSubscribersParams,
+  PurchaseDetails,
+  ReportStats,
   SDKErrorCode,
+  SegmentStats,
   Sequence,
   SiteStats,
   Subscriber,
@@ -37,7 +44,9 @@ import type {
   Tag,
   TagSubscriberParams,
   TrackEventParams,
+  TransactionalEmail,
   UpdateSequenceEmailInput,
+  Workflow,
 } from "../types/sdk";
 import {
   type ResolveSequenceIdResult,
@@ -475,6 +484,146 @@ export class BentoClient {
   }
 
   // ============================================================
+  // Purchase Operations
+  // ============================================================
+
+  /**
+   * Track a purchase event (TRIGGERS automations)
+   */
+  async trackPurchase(email: string, purchaseDetails: PurchaseDetails): Promise<boolean> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.trackPurchase({ email, purchaseDetails }));
+  }
+
+  // ============================================================
+  // Advanced Subscriber Operations
+  // ============================================================
+
+  /**
+   * Remove subscriber (automation-aware unsubscribe, TRIGGERS automations)
+   */
+  async removeSubscriber(email: string): Promise<boolean> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.removeSubscriber({ email }));
+  }
+
+  /**
+   * Upsert subscriber — creates or updates with fields and tags
+   */
+  async upsertSubscriber(
+    email: string,
+    fields?: Record<string, unknown>,
+    tags?: string,
+    removeTags?: string
+  ): Promise<Subscriber<Record<string, unknown>> | null> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() =>
+      sdk.V1.upsertSubscriber({ email, fields, tags, remove_tags: removeTags })
+    );
+  }
+
+  // ============================================================
+  // Transactional Email Operations
+  // ============================================================
+
+  /**
+   * Send transactional emails (batch, up to 100)
+   */
+  async sendTransactionalEmails(emails: TransactionalEmail[]): Promise<number> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.Batch.sendTransactionalEmails({ emails }));
+  }
+
+  // ============================================================
+  // Workflow Operations
+  // ============================================================
+
+  /**
+   * List all workflows (auto-paginates)
+   */
+  async getWorkflows(): Promise<Workflow[]> {
+    const perPage = 100;
+    const maxPages = 200;
+    const workflows: Workflow[] = [];
+    const seenIds = new Set<string>();
+
+    type WorkflowListResponse = {
+      data?: Workflow[];
+      meta?: { total?: number; page?: number };
+    };
+
+    let page = 1;
+    let total: number | undefined;
+
+    while (page <= maxPages) {
+      const response = await this.apiGet<WorkflowListResponse | Workflow[]>("/fetch/workflows", {
+        page,
+        per_page: perPage,
+      });
+
+      const data = Array.isArray(response) ? response : (response.data ?? []);
+      const meta = Array.isArray(response) ? undefined : response.meta;
+
+      if (meta?.total !== undefined) {
+        total = meta.total;
+      }
+
+      if (data.length === 0) break;
+
+      for (const item of data) {
+        if (seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+        workflows.push(item);
+      }
+
+      if (total !== undefined && workflows.length >= total) break;
+      if (data.length < perPage) break;
+
+      page += 1;
+    }
+
+    return workflows;
+  }
+
+  // ============================================================
+  // Email Template Operations
+  // ============================================================
+
+  /**
+   * Get an email template by ID
+   */
+  async getEmailTemplate(id: string): Promise<EmailTemplate | null> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.EmailTemplates.getEmailTemplate({ id }));
+  }
+
+  /**
+   * Update an email template
+   */
+  async updateEmailTemplate(
+    id: string,
+    subject?: string,
+    html?: string
+  ): Promise<EmailTemplate | null> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() =>
+      sdk.V1.EmailTemplates.updateEmailTemplate({ id, subject, html })
+    );
+  }
+
+  // ============================================================
+  // Form Operations
+  // ============================================================
+
+  /**
+   * Get form responses by form identifier
+   */
+  async getFormResponses(formIdentifier: string): Promise<FormResponse[] | null> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.Forms.getResponses(formIdentifier));
+  }
+
+  // ============================================================
   // Stats Operations
   // ============================================================
 
@@ -484,6 +633,82 @@ export class BentoClient {
   async getSiteStats(): Promise<SiteStats> {
     const sdk = await this.getClient();
     return this.handleApiCall(() => sdk.V1.Stats.getSiteStats());
+  }
+
+  /**
+   * Get segment statistics
+   */
+  async getSegmentStats(segmentId: string): Promise<SegmentStats> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.Stats.getSegmentStats(segmentId));
+  }
+
+  /**
+   * Get report statistics
+   */
+  async getReportStats(reportId: string): Promise<ReportStats> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.Stats.getReportStats(reportId));
+  }
+
+  // ============================================================
+  // Experimental Operations
+  // ============================================================
+
+  /**
+   * Validate an email address
+   */
+  async validateEmail(
+    email: string,
+    ip?: string,
+    name?: string,
+    userAgent?: string
+  ): Promise<boolean> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() =>
+      sdk.V1.Experimental.validateEmail({ email, ip, name, userAgent })
+    );
+  }
+
+  /**
+   * Guess gender from a name
+   */
+  async guessGender(name: string): Promise<GuessGenderResponse> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.Experimental.guessGender({ name }));
+  }
+
+  /**
+   * Geolocate an IP address
+   */
+  async geolocate(ip: string): Promise<unknown> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.Experimental.geoLocateIP({ ip }));
+  }
+
+  /**
+   * Check domain/IP against blacklists
+   */
+  async checkBlacklist(domain?: string, ip?: string): Promise<BlacklistResponse> {
+    if (!domain && !ip) {
+      throw new CLIError(
+        "Provide either domain or ip for blacklist checks.",
+        "VALIDATION_ERROR",
+        422
+      );
+    }
+
+    const sdk = await this.getClient();
+    const params = domain ? { domain } : { ipAddress: ip };
+    return this.handleApiCall(() => sdk.V1.Experimental.getBlacklistStatus(params));
+  }
+
+  /**
+   * Perform content moderation
+   */
+  async getContentModeration(content: string): Promise<ContentModerationResult> {
+    const sdk = await this.getClient();
+    return this.handleApiCall(() => sdk.V1.Experimental.getContentModeration(content));
   }
 
   // ============================================================
@@ -589,11 +814,50 @@ export class BentoClient {
   // ============================================================
 
   /**
-   * List all sequences.
+   * List all sequences (auto-paginates)
    */
   async getSequences(): Promise<Sequence[]> {
-    const sdk = await this.getClient();
-    return this.handleApiCall(() => sdk.V1.Sequences.getSequences());
+    const perPage = 100;
+    const maxPages = 200;
+    const sequences: Sequence[] = [];
+    const seenIds = new Set<string>();
+
+    type SequenceListResponse = {
+      data?: Sequence[];
+      meta?: { total?: number; page?: number };
+    };
+
+    let page = 1;
+    let total: number | undefined;
+
+    while (page <= maxPages) {
+      const response = await this.apiGet<SequenceListResponse | Sequence[]>("/fetch/sequences", {
+        page,
+        per_page: perPage,
+      });
+
+      const data = Array.isArray(response) ? response : (response.data ?? []);
+      const meta = Array.isArray(response) ? undefined : response.meta;
+
+      if (meta?.total !== undefined) {
+        total = meta.total;
+      }
+
+      if (data.length === 0) break;
+
+      for (const item of data) {
+        if (seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+        sequences.push(item);
+      }
+
+      if (total !== undefined && sequences.length >= total) break;
+      if (data.length < perPage) break;
+
+      page += 1;
+    }
+
+    return sequences;
   }
 
   /**

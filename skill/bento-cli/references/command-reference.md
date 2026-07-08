@@ -2,6 +2,17 @@
 
 Complete reference for all Bento CLI commands with options and examples.
 
+## Installation
+
+```bash
+# Recommended: npx (always latest version, no install needed)
+npx @bentonow/bento-cli <command>
+
+# Or install globally
+npm install -g @bentonow/bento-cli
+bento <command>
+```
+
 ## Global Options
 
 These options work with most commands:
@@ -106,38 +117,57 @@ bento profile remove staging
 
 ---
 
+## dashboard
+
+Open the Bento dashboard in your default browser. When a profile is active, the CLI opens the dashboard scoped to that site; otherwise it opens the login page.
+
+```bash
+# Active profile
+bento dashboard
+
+# Explicit profile
+bento dashboard --profile staging
+
+# Automation
+bento dashboard --json
+```
+
+**Options**:
+| Option | Description |
+|--------|-------------|
+| `--profile <name>` | Open the dashboard for a specific profile |
+
+---
+
 ## subscribers
 
 Subscriber management commands.
 
 ### subscribers search
 
-Search for subscribers with various filters.
+Look up a single subscriber by email or UUID, optionally filtering by tag or field.
 
 ```bash
 # By email
 bento subscribers search --email user@example.com
 
-# By tag
-bento subscribers search --tag vip
-bento subscribers search --tag active
+# By UUID
+bento subscribers search --uuid abc123-def456
 
-# By custom field
-bento subscribers search --field plan=pro
-bento subscribers search --field company=Acme
+# With tag filter (client-side: checks if subscriber has the tag)
+bento subscribers search --email user@example.com --tag vip
 
-# Pagination
-bento subscribers search --tag vip --page 2 --per-page 50
+# With field filter (client-side: checks subscriber field value)
+bento subscribers search --email user@example.com --field plan=pro
 ```
 
 **Options**:
 | Option | Description |
 |--------|-------------|
-| `--email <email>` | Filter by email address |
-| `--tag <tag>` | Filter by tag name |
-| `--field <key=value>` | Filter by custom field |
-| `--page <n>` | Page number (default: 1) |
-| `--per-page <n>` | Results per page (default: 25) |
+| `--email <email>` | Look up subscriber by email (required unless --uuid) |
+| `--uuid <uuid>` | Look up subscriber by UUID (required unless --email) |
+| `--tag <tag>` | Only show if subscriber has this tag |
+| `--field <key=value>` | Only show if subscriber field matches (repeatable) |
 
 ### subscribers import
 
@@ -245,12 +275,18 @@ Tag management commands.
 
 ### tags list
 
-List all tags in the account.
+List all tags in the account. Optionally filter by name with fuzzy search.
 
 ```bash
 bento tags list
+bento tags list news         # Fuzzy search by tag name
 bento tags list --json
 ```
+
+**Arguments**:
+| Argument | Description |
+|----------|-------------|
+| `[search]` | Optional. Filter tags by name (fuzzy match) |
 
 ### tags create
 
@@ -280,12 +316,18 @@ Custom field management commands.
 
 ### fields list
 
-List all custom fields.
+List all custom fields. Optionally filter by key or name with fuzzy search.
 
 ```bash
 bento fields list
+bento fields list company    # Fuzzy search by field key or name
 bento fields list --json
 ```
+
+**Arguments**:
+| Argument | Description |
+|----------|-------------|
+| `[search]` | Optional. Filter fields by key or name (fuzzy match) |
 
 ### fields create
 
@@ -338,12 +380,19 @@ Broadcast management commands.
 
 ### broadcasts list
 
-List all broadcasts.
+List broadcasts. By default fetches all broadcasts. Use `--page` and `--per-page` to paginate.
 
 ```bash
 bento broadcasts list
+bento broadcasts list --page 2 --per-page 10
 bento broadcasts list --json
 ```
+
+**Options**:
+| Option | Description |
+|--------|-------------|
+| `--page <n>` | Page number (enables pagination) |
+| `--per-page <n>` | Results per page (default: 25, implies pagination) |
 
 ### broadcasts create
 

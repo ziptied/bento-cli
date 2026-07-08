@@ -4,6 +4,7 @@
  * Commands:
  * - bento sequences list - List all sequences
  * - bento sequences create-email - Create an email template in a sequence
+ * - bento sequences update-email - Update an existing sequence email template
  */
 
 import { readFile } from "node:fs/promises";
@@ -218,6 +219,7 @@ async function resolveHtmlInput(html?: string, htmlFile?: string): Promise<strin
     validateHtmlSize(content);
     return content;
   } catch (error) {
+    if (error instanceof CLIError) throw error;
     if (error instanceof Error && "code" in error) {
       const code = String(error.code);
       if (code === "ENOENT") {

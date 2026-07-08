@@ -49,10 +49,9 @@ describe("BentoClient", () => {
       // Spy on config module to use our test config
       const configModule = await import("../../src/core/config");
       const originalConfig = configModule.config;
-      const getCurrentProfileSpy = spyOn(
-        originalConfig,
-        "getCurrentProfile"
-      ).mockImplementation(async () => null);
+      const getCurrentProfileSpy = spyOn(originalConfig, "getCurrentProfile").mockImplementation(
+        async () => null
+      );
 
       try {
         await expect(testClient.getClient()).rejects.toThrow(CLIError);
@@ -228,14 +227,12 @@ describe("BentoClient", () => {
       };
 
       const configModule = await import("../../src/core/config");
-      spyOn(configModule.config, "getCurrentProfile").mockImplementation(
-        async () => ({
-          apiKey: "test-api-key",
-          siteId: "test-site-id",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-      );
+      spyOn(configModule.config, "getCurrentProfile").mockImplementation(async () => ({
+        apiKey: "test-api-key",
+        siteId: "test-site-id",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
     });
 
     it("translates NotAuthorizedError to AUTH_FAILED", async () => {
@@ -412,17 +409,13 @@ describe("SDK wrapper methods", () => {
         },
         Tags: {
           getTags: mock(() =>
-            Promise.resolve([
-              { id: "tag-1", type: "tag", attributes: { name: "test-tag" } },
-            ])
+            Promise.resolve([{ id: "tag-1", type: "tag", attributes: { name: "test-tag" } }])
           ),
           createTag: mock(() => Promise.resolve([{ id: "tag-1" }])),
         },
         Fields: {
           getFields: mock(() =>
-            Promise.resolve([
-              { id: "field-1", type: "field", attributes: { key: "test_field" } },
-            ])
+            Promise.resolve([{ id: "field-1", type: "field", attributes: { key: "test_field" } }])
           ),
           createField: mock(() => Promise.resolve([{ id: "field-1" }])),
         },
@@ -431,6 +424,34 @@ describe("SDK wrapper methods", () => {
             Promise.resolve({
               total_subscribers: 100,
               active_subscribers: 90,
+            })
+          ),
+        },
+        Sequences: {
+          getSequences: mock(() =>
+            Promise.resolve([
+              {
+                id: "sequence-1",
+                type: "sequences",
+                attributes: {
+                  name: "Welcome Sequence",
+                  created_at: "2025-01-01T00:00:00Z",
+                  email_templates: [{ id: 1, subject: "Welcome", stats: null }],
+                },
+              },
+            ])
+          ),
+          createSequenceEmail: mock(() =>
+            Promise.resolve({
+              id: "template-1",
+              type: "email_templates",
+              attributes: {
+                name: "Welcome",
+                subject: "Welcome",
+                html: "<p>Welcome</p>",
+                created_at: "2025-01-01T00:00:00Z",
+                stats: null,
+              },
             })
           ),
         },
@@ -457,8 +478,9 @@ describe("SDK wrapper methods", () => {
     // Override getClient to return mock SDK
     (client as any).sdk = mockSdk;
     (client as any).profile = {
-      apiKey: "test-key",
-      siteId: "test-site",
+      publishableKey: "test-pub-key",
+      secretKey: "test-secret-key",
+      siteUuid: "test-site-uuid",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -677,7 +699,7 @@ describe("SDK wrapper methods", () => {
   describe("sequence operations", () => {
     beforeEach(() => {
       mockSdk.V1.Sequences = {
-        getSequences: mock(({ page }: { page?: number } = {}) =>
+        getSequences: mock(() =>
           Promise.resolve([
             {
               id: "seq_999",
@@ -709,6 +731,38 @@ describe("SDK wrapper methods", () => {
       };
     });
 
+    it("getSequences returns sequence array", async () => {
+      const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "seq_999",
+                type: "sequence",
+                attributes: {
+                  name: "Welcome Flow",
+                  created_at: "2025-01-01T00:00:00Z",
+                  email_templates: [],
+                },
+              },
+            ],
+            meta: { total: 1 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+
+      try {
+      const sequences = await client.getSequences();
+
+      expect(sequences).toHaveLength(1);
+      expect(sequences[0].id).toBe("seq_999");
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
     it("createSequenceEmail sends snake_case payload to SDK", async () => {
       const result = await client.createSequenceEmail("999", {
         subject: "Welcome",
@@ -736,12 +790,35 @@ describe("SDK wrapper methods", () => {
     });
 
     it("resolveSequenceIdForEmail resolves exact sequence name to list response ID", async () => {
-      const sequenceId = await client.resolveSequenceIdForEmail({
-        sequenceName: "welcome flow",
-      });
+      const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "seq_999",
+                type: "sequence",
+                attributes: {
+                  name: "Welcome Flow",
+                  created_at: "2025-01-01T00:00:00Z",
+                  email_templates: [],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
 
-      expect(sequenceId).toBe("seq_999");
-      expect(mockSdk.V1.Sequences.getSequences).toHaveBeenCalledWith();
+      try {
+        const sequenceId = await client.resolveSequenceIdForEmail({
+          sequenceName: "welcome flow",
+        });
+
+        expect(sequenceId).toBe("seq_999");
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
 
     it("updateSequenceEmail patches template by numeric ID", async () => {
@@ -757,8 +834,72 @@ describe("SDK wrapper methods", () => {
         html: "<p>Updated</p>",
       });
     });
-  });
 
+    it("createSequenceEmail uses SDK method when available", async () => {
+      const result = await client.createSequenceEmail("sequence_1", {
+        subject: "Welcome",
+        html: "<p>Welcome</p>",
+      });
+
+      expect(result?.id).toBe(4321);
+      expect(mockSdk.V1.Sequences.createSequenceEmail).toHaveBeenCalledWith("sequence_1", {
+        subject: "Welcome",
+        html: "<p>Welcome</p>",
+        inbox_snippet: undefined,
+        delay_interval: undefined,
+        delay_interval_count: undefined,
+        editor_choice: undefined,
+        cc: undefined,
+        bcc: undefined,
+        to: undefined,
+      });
+    });
+
+    it("createSequenceEmail falls back to API POST when SDK method is unavailable", async () => {
+      mockSdk.V1.Sequences.createSequenceEmail = undefined;
+
+      const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: "template-2",
+              type: "email_templates",
+              attributes: {
+                name: "Fallback",
+                subject: "Fallback",
+                html: "<p>Fallback</p>",
+                created_at: "2025-01-01T00:00:00Z",
+                stats: null,
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      );
+
+      try {
+        const result = await client.createSequenceEmail("sequence_42", {
+          subject: "Fallback",
+          html: "<p>Fallback</p>",
+        });
+
+        expect(result?.id).toBe("template-2");
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        const [requestUrl, init] = fetchSpy.mock.calls[0];
+        expect(String(requestUrl)).toContain("/fetch/sequences/sequence_42/emails/templates");
+        expect(init?.method).toBe("POST");
+        const parsedBody = JSON.parse(init?.body as string);
+        expect(parsedBody.site_uuid).toBe("test-site-uuid");
+        expect(parsedBody.email_template.subject).toBe("Fallback");
+        expect(parsedBody.email_template.html).toBe("<p>Fallback</p>");
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+  });
   describe("error propagation", () => {
     it("propagates errors through handleApiCall", async () => {
       mockSdk.V1.Tags.getTags = mock(() =>
